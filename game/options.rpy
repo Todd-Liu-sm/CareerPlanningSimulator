@@ -44,5 +44,13 @@ define config.console = True
 # 结论：Ren'Py 的默认行为（game/ 下全收、脚本自动编译）就是对的，别动它。
 # 包体异常由 tools/build.ps1 的打包后校验兜底（它会解包检查内核、字体、
 # 脚本编译产物，并在包体 > 120MB 或出现 SDK 目录时直接失败）。
+#
+# 那 game/ 之外那些开发目录（tools/ tests/ docs/ idea.txt）怎么办？
+# classify 管不到它们，所以 build.ps1 打包完之后会**再把它们从解开的产物里删掉**，
+# 然后重新压出一个干净的 zip，并额外产出一个免安装文件夹。
+# 这是唯一能同时满足"内置内核要进包"和"开发文件不能给玩家"的做法。
 define build.name = "本科职业发展模拟器"
 define build.version = "1.0.0"
+
+# 不去生成 update/ 增量包（单机游戏用不上，还会拖慢打包）
+define build.include_update = False
