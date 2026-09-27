@@ -41,6 +41,7 @@ def sweep():
     rng = random.Random(20260101)
     endings: collections.Counter = collections.Counter()
     node_hits: collections.Counter = collections.Counter()
+    attr_max_hits: collections.Counter = collections.Counter()
     totals: list[int] = []
     unfinished = 0
 
@@ -53,6 +54,9 @@ def sweep():
         endings[eng.resolve_ending().key] += 1
         for node_id in eng.player.unlocked:
             node_hits[node_id] += 1
+        for attr, value in eng.player.attrs.items():
+            if value >= C.ATTR_MAX:
+                attr_max_hits[attr] += 1
         totals.append(sum(eng.player.attrs.values()))
         if not eng.finished:
             unfinished += 1
@@ -60,6 +64,7 @@ def sweep():
     return {
         "endings": endings,
         "node_hits": node_hits,
+        "attr_max_hits": attr_max_hits,
         "totals": totals,
         "unfinished": unfinished,
     }
@@ -121,8 +126,72 @@ def test_attr_totals_stay_in_human_range(sweep):
     """总量必须落在人类尺度：太低说明卡池太弱，太高说明数值通胀。"""
     totals = sorted(sweep["totals"])
     median = totals[len(totals) // 2]
-    assert 150 <= median <= 700, f"属性点中位数 {median} 超出 150-700"
-    assert max(totals) <= 900, f"最高属性总和 {max(totals)} 太高，数值通胀了"
+    assert 120 <= median <= 400, f"属性点中位数 {median} 超出 120-400"
+    assert max(totals) <= 500, f"最高属性总和 {max(totals)} 太高，数值通胀了"
+
+
+def test_a_focused_build_can_actually_pass_a_gate(sweep):
+    """专精一条线必须真的能过门槛，否则所有玩法都会掉进兜底结局。
+
+    这条曾经真的挂过：卡池每个属性只有 3-5 张卡、合计 11-17 点，
+    而门槛要 20-26 点 —— **一条结局都够不着**。修法是加深卡池而不是降门槛。
+    """
+    from game.core import actions as ACT
+
+    for attr in C.ATTRS:
+        gains = sorted(
+            (
+                int(card.effects.get(attr, 0) * C.RARITY_MULT.get(card.rarity, 1.0))
+                for card in ACT.for_major("cs")
+                if not card.contest_id and card.effects.get(attr, 0) > 0
+            ),
+            reverse=True,
+        )
+        ceiling = min(C.ATTR_MAX, sum(gains[:8]))
+        # 引用这个属性的最高门槛
+        needs = [
+            gate[attr]
+            for gate in list(C.ENDING_GATES.values())
+            + [g for alts in C.ENDING_ALTS.values() for g in alts.values()]
+            if attr in gate
+        ]
+        if not needs:
+            continue
+        hardest = max(needs)
+        assert ceiling >= hardest, (
+            "%s（%s）专精 8 张卡只能到 %d，过不了门槛 %d"
+            % (attr, C.ATTR_NAMES[attr], ceiling, hardest)
+        )
+
+
+def test_gate_attributes_never_saturate(sweep):
+    """**结局门槛引用到的属性**不能在绝大多数局里都顶到硬顶。
+
+    为什么只盯这几个：门槛属性一旦人人满值，赛道之间就没有取舍了 ——
+    那才是真正的平衡崩坏。支撑型属性（心态、身体）没有门槛引用，
+    卡池供给又天然是需求的 3 倍，满值是设计上的合理结果，不算问题
+    （实测 心理韧性 94% 的局满值，但它不进任何一条结局判定）。
+
+    这条断言真的抓过 bug：卡池加深之前，每个属性的最高 8 张卡之和只有
+    11-17 点，而门槛要 20-26 点 —— **所有专精玩法都过不了任何一条结局**。
+    """
+    gate_attrs = set()
+    for gate in C.ENDING_GATES.values():
+        gate_attrs.update(gate)
+    for alts in C.ENDING_ALTS.values():
+        for gate in alts.values():
+            gate_attrs.update(gate)
+    assert gate_attrs, "门槛表是空的"
+
+    saturated = sorted(
+        attr
+        for attr in gate_attrs
+        if sweep["attr_max_hits"].get(attr, 0) > GAMES * 0.80
+    )
+    assert not saturated, (
+        "这些门槛属性在 %d 局里有超过 80%% 的局顶到硬顶，赛道之间没有取舍了：%s"
+        % (GAMES, [(a, sweep["attr_max_hits"][a]) for a in saturated])
+    )
 
 
 def test_ending_candidates_are_nonempty_for_most_runs():

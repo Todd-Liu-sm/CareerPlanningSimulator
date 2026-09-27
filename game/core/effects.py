@@ -201,21 +201,6 @@ def attr_gain(
 
 # ================================================================ 属性写入
 
-# 属性满了以后，溢出收益转给谁
-OVERFLOW_NEIGHBORS: dict[str, tuple[str, ...]] = {
-    "gpa": ("research", "english"),
-    "research": ("portfolio", "gpa"),
-    "intern": ("network", "portfolio"),
-    "english": ("gpa", "exam"),
-    "exam": ("english", "leadership"),
-    "network": ("leadership", "intern"),
-    "leadership": ("network", "exam"),
-    "portfolio": ("intern", "research"),
-    "body": ("mind",),
-    "mind": ("body",),
-}
-
-
 def _fatigue_multiplier(fatigue: int) -> float:
     return C.FATIGUE_PENALTY_MULT if fatigue >= C.FATIGUE_PENALTY_AT else 1.0
 
@@ -246,20 +231,12 @@ def add_attrs(
         current = player.attrs.get(key, 0)
         new_value = current + amount
         if new_value > C.ATTR_MAX:
-            overflow = new_value - C.ATTR_MAX
+            # 到顶就是到顶，不做溢出转移。
+            # 早期版本会把多出来的点数转给相邻属性，相邻再转给相邻，形成级联，
+            # 结果半张属性表被糊满（玩家反馈的"作品分溢出"根因）。
+            if notes is not None and amount > 0 and current >= C.ATTR_MAX:
+                notes.append("%s已满" % C.ATTR_SHORT[key])
             player.attrs[key] = C.ATTR_MAX
-            if overflow > 0 and amount > 0:
-                neighbors = OVERFLOW_NEIGHBORS.get(key, ())
-                if neighbors and notes is not None:
-                    notes.append(f"{C.ATTR_SHORT[key]}已满，部分收益转移")
-                for index, neighbor in enumerate(neighbors):
-                    share = overflow * C.OVERFLOW_SHARE ** (index + 1)
-                    if share < 1:
-                        break
-                    nb = player.attrs.get(neighbor, 0)
-                    player.attrs[neighbor] = min(
-                        C.ATTR_MAX, nb + _to_int(share)
-                    )
         elif new_value < 0:
             player.attrs[key] = 0
         else:
@@ -267,11 +244,12 @@ def add_attrs(
 
 
 def add_resource(state: GameState, key: str, amount: int) -> None:
-    """写入疲劳 / 经济。非法 key 会被忽略，避免内容作者写错字段炸掉一局。"""
+    """写入疲劳。非法 key 会被忽略，避免内容作者写错字段炸掉一局。
+
+    经济已经移除，所以这里只认 "fatigue" 一个 key。
+    """
     if key == "fatigue":
         state.fatigue = max(C.RESOURCE_MIN, min(C.RESOURCE_MAX, state.fatigue + amount))
-    elif key == "money":
-        state.money = max(C.RESOURCE_MIN, min(C.RESOURCE_MAX, state.money + amount))
 
 
 def _snapshot_player(player: PlayerState) -> dict[str, int]:
@@ -279,7 +257,7 @@ def _snapshot_player(player: PlayerState) -> dict[str, int]:
 
 
 def _snapshot_resource(state: GameState) -> dict[str, int]:
-    return {"fatigue": state.fatigue, "money": state.money}
+    return {"fatigue": state.fatigue}
 
 
 # ================================================================ 行动卡结算
@@ -394,21 +372,32 @@ def apply_event_option(state: GameState, option: Any) -> EffectDelta:
 def semester_fatigue(state: GameState, attr_spend: dict[str, int]) -> tuple[int, list[str]]:
     """算学期末的疲劳变化与惩罚提示。返回 (疲劳增量, 提示文字)。
 
-    公式（唯一的实现处）：
-        增量 = FATIGUE_PER_SEMESTER
-             - FATIGUE_REST_RELIEF * 休息行动点
+    公式（唯一的实现处）—— **按行动点计价**：
+
+        增量 = FATIGUE_PER_ACTION * 本学期用掉的行动点
+             - FATIGUE_REST_RELIEF * 休息类行动点
              - FATIGUE_NATURAL_RECOVERY
              -（心态够高时）FATIGUE_LOW_MIND_RELIEF
-    一个"正常用力"的学期（3 个行动点全用在正事上、不休息）应该是净增的，
-    这样疲劳才会在连续硬扛 4-5 个学期后压到惩罚线，逼玩家安排休息。
+
+    实算效果（每学期 3 点）：
+        3 点全干活       → +10/学期 → 硬扛 4 个学期就撞惩罚线（50）
+        2 干活 + 1 休息  →  -4/学期 → 可以一直维持
+        1 干活 + 2 休息  → -18/学期
+
+    上一版是"每学期固定 +4"，八年下来也到不了惩罚线，所以"疯狂卷"没有代价。
+    这一版疲劳真的会咬人，玩家必须定期安排休息。
     """
     notes: list[str] = []
-    gain = C.FATIGUE_PER_SEMESTER
+    spent = max(0, C.ap_for(state.semester) - state.action_points)
+    gain = C.FATIGUE_PER_ACTION * spent
     gain -= C.FATIGUE_REST_RELIEF * state.rest_points
     gain -= C.FATIGUE_NATURAL_RECOVERY
     if state.player.attr("mind") >= C.FATIGUE_HIGH_MIND_RELIEF_AT:
         gain -= C.FATIGUE_LOW_MIND_RELIEF
         notes.append("心态稳住了，恢复得比预想快")
+
+    if spent > 0 and state.rest_points == 0:
+        notes.append("这个学期一点没歇，身体在记账")
 
     over = overinvested_attrs(attr_spend)
     if over:

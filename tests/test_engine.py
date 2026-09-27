@@ -121,11 +121,11 @@ def test_every_semester_has_cards_for_every_major():
             assert eng.semester_cards(), f"{major_id} 在第 {sem} 学期没有可选卡"
 
 
-def test_contest_cards_hidden_for_other_majors():
-    """专业隔离：计算机学生的竞赛池必须和海洋学生不一样。
+def test_contest_cards_differ_by_major():
+    """竞赛改成大类之后，专业差异体现为"看得见哪几个大类"。
 
-    竞赛卡的开放学期从 CONTEST_TIER_EARLIEST["school"]=3 起，
-    所以这里把学期推到 4 再看。
+    竞赛卡的开放学期从 CONTEST_TIER_EARLIEST["school"]=1 起，
+    这里把学期推到 4 才能看到全部阶梯。
     """
     cs = new_engine(major="cs")
     cs.state.semester = 4
@@ -138,14 +138,15 @@ def test_contest_cards_hidden_for_other_majors():
     assert cs_contests, "计算机专业应该能看见竞赛"
     assert ocean_contests, "海洋专业应该能看见竞赛"
 
-    only_cs = cs_contests - ocean_contests
-    only_ocean = ocean_contests - cs_contests
-    assert only_cs, "计算机应该有专属竞赛"
-    assert only_ocean, "海洋应该有专属竞赛"
+    # 计算机看得见工程类和商科类，海洋看不见商科类
+    assert any("engineering" in cid for cid in cs_contests)
+    assert any("business" in cid for cid in cs_contests)
+    assert not any("business" in cid for cid in ocean_contests)
+    # 综合类对所有人都开放
+    assert any("comprehensive" in cid for cid in cs_contests)
+    assert any("comprehensive" in cid for cid in ocean_contests)
 
-    # 重叠率不能太高，否则"按专业选竞赛"就名存实亡
-    overlap = len(cs_contests & ocean_contests) / max(1, len(cs_contests | ocean_contests))
-    assert overlap < 0.6, f"两个专业的竞赛池重叠率 {overlap:.0%} 太高"
+    assert cs_contests != ocean_contests, "两个专业看见的竞赛不该完全一样"
 
 
 def test_card_gate_blocks_unavailable_card():
@@ -351,9 +352,83 @@ def test_apply_event_without_pending_is_rejected():
 
 
 def test_hooks_fire_on_schedule():
+    """4 个关键抉择都要触发，而且必须在它自己的那个学期触发。
+
+    hook.semester = N 的语义是"进入第 N 学期时抛出"，所以这里逐一核对
+    触发时的学期号。上一版把 semester 当成 next_sem 查，导致所有抉择
+    晚一个学期、大四下的收尾抉择永远触发不到。
+    """
     eng = play_full(new_engine(seed=404))
     expected = {hook.id for hook in ENG.STR.HOOKS.values()}
     assert eng.state.used_hooks == expected, "每个关键抉择都应该触发一次"
+
+    # history 里每个学期的标签顺序要对，而且正好 8 个学期
+    labels = [entry["label"] for entry in eng.state.history]
+    assert labels == [C.semester_label(s) for s in range(1, C.TOTAL_SEMESTERS + 1)]
+
+
+def test_final_hook_actually_decides_the_true_ending():
+    """结局抉择答完之后，结局要和它选的那条路对上。
+
+    这是"属性够了 → 真的上岸"之间唯一的连接点：resolve 判定通过才会授予
+    kaoyan_admitted / qiuzhao_offer 之类的 flag，而 ENDING_FLAGS 又要求
+    这些 flag 才能给出对应结局。断了就只剩"走进实验室"。
+    """
+    # 每次走到结局抉择就换一个选项，把 6 条路都试一遍
+    endings = set()
+    for pick in range(6):
+        eng = new_engine(seed=20260101)
+        steps = 0
+        while not eng.finished and steps < 400:
+            steps += 1
+            if eng.pending_event() is not None:
+                eng.apply_event(0)
+                continue
+            hook = eng.pending_hook()
+            if hook is not None:
+                index = pick if hook.id == ENG.STR.FINAL_HOOK_ID else 0
+                eng.apply_hook(hook.options[min(index, len(hook.options) - 1)].id)
+                continue
+            cards = eng.semester_cards()
+            if not cards:
+                break
+            n = min(eng.ap, len(cards))
+            if n <= 0:
+                break
+            if not eng.play([c.id for c in cards[:n]]).ok:
+                break
+        assert eng.finished, f"第 {pick} 条路没跑完"
+        assert eng.state.semester == C.TOTAL_SEMESTERS
+        assert len(eng.state.history) == C.TOTAL_SEMESTERS, "历史必须是 8 条"
+        ending = eng.resolve_ending()
+        assert ending.name and ending.narrative
+        endings.add(ending.key)
+
+    assert len(endings) >= 2, f"换了 6 个结局选项仍然只有 {endings}，判定太死"
+
+
+def test_ending_flag_matches_the_ending():
+    """拿到 flag 的赛道才配得上"上岸"结局。"""
+    eng = play_full(new_engine(seed=4242))
+    ending = eng.resolve_ending()
+    for track, flags in ENG.CFG.ENDING_FLAGS.items():
+        if ending.key == track and flags:
+            assert any(flag in eng.player.flags for flag in flags), (
+                f"结局是 {track}，但一个 flag 都没拿到：{sorted(eng.player.flags)}"
+            )
+
+
+def test_finish_semester_works_in_the_last_semester():
+    """大四下主动收尾也要能正常结束，不能卡住。"""
+    eng = new_engine(seed=777)
+    eng.state.semester = C.TOTAL_SEMESTERS
+    eng.state.action_points = C.ap_for(C.TOTAL_SEMESTERS)
+    eng.state.finished = False
+    eng.state.used_hooks.update(h.id for h in ENG.STR.HOOKS.values())
+    result = eng.finish_semester()
+    assert result.ok or not result.rejected
+    assert eng.finished
+    assert eng.resolve_ending().name
 
 
 def test_hook_does_not_cost_action_points():

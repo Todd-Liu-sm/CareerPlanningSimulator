@@ -174,7 +174,6 @@ screen game_screen():
 
             null height 7
             use resource_line("疲劳", engine.state.fatigue, c_danger, C.RESOURCE_MAX)
-            use resource_line("经济", engine.state.money, c_gold, C.RESOURCE_MAX)
 
     # ---------------- 浮层
     if active_overlay == "tree":

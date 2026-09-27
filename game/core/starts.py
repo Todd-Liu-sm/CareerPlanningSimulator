@@ -100,7 +100,7 @@ START_LIST: tuple[StartLine, ...] = (
             "intern": 0,
             "exam": 0,
         },
-        skills=("n_research_join_lab", "n_baoyan_baseline"),
+        skills=("n_research_join", "n_baoyan_base"),
         focus=("baoyan", "research"),
         perks=("start_ace",),
         hint="开局就能直接进组，但人脉和组织影响力得从零补。别把前两年全花在实验室里。",
@@ -126,7 +126,7 @@ START_LIST: tuple[StartLine, ...] = (
             "exam": 0,
             "portfolio": 0,
         },
-        skills=("n_gov_application", "n_shared_cadre"),
+        skills=("n_gov_application", "n_sh_cadre"),
         focus=("gov", "job"),
         perks=("start_cadre",),
         hint="入党要趁早，大三再想起来就赶不上选调了。绩点是你唯一的软肋。",
@@ -152,7 +152,7 @@ START_LIST: tuple[StartLine, ...] = (
             "intern": 0,
             "portfolio": 0,
         },
-        skills=("n_baoyan_baseline",),
+        skills=("n_baoyan_base",),
         focus=("baoyan", "kaoyan"),
         perks=("start_scholar",),
         hint="你的绩点是全场最高，保研或考研都吃得开。但要专门花行动点补英语和人脉。",
@@ -178,7 +178,7 @@ START_LIST: tuple[StartLine, ...] = (
             "exam": 0,
             "portfolio": 0,
         },
-        skills=("n_shared_mind", "n_job_resume"),
+        skills=("n_sh_mind", "n_job_resume"),
         focus=("job", "abroad"),
         perks=("start_artisan",),
         hint="你的爱好起点高，早期就能靠爱好换人脉和心态。注意别落下绩点门槛。",
@@ -296,8 +296,8 @@ def _mk_hook(
 
 # 大三上：要不要押注保研 / 考研
 _mk_hook(
-    "k_sem6_direction",
-    6,
+    "k_sem5_direction",
+    5,
     "该定方向了",
     (
         "大三上过半，辅导员在群里发了一条消息：保研资格测算要开始准备了，"
@@ -336,8 +336,8 @@ _mk_hook(
 
 # 大三下：夏令营 / 暑期实习 / 出国语言，三选一
 _mk_hook(
-    "k_sem8_summer",
-    8,
+    "k_sem6_summer",
+    6,
     "这个暑假怎么过",
     (
         "大三下的暑假是四年里最容易被浪费、也最值钱的两个月。"
@@ -358,7 +358,7 @@ _mk_hook(
             text="去大厂实习，攒简历",
             desc="两段实习比一段有说服力，但你要在通勤和加班里挤出时间。",
             effects={"intern": 5, "network": 2, "portfolio": 1},
-            resources={"fatigue": 8, "money": 5},
+            resources={"fatigue": 8},
             flags=("summer_intern",),
             track="job",
         ),
@@ -376,8 +376,8 @@ _mk_hook(
 
 # 大四上：秋招 vs 考研冲刺 vs 保研投递
 _mk_hook(
-    "k_sem11_final_dash",
-    11,
+    "k_sem7_dash",
+    7,
     "秋招、考研、九推，同时开跑",
     (
         "九月的校园里所有人都很忙。宣讲会一场接一场，图书馆的位置要靠抢，"
@@ -389,7 +389,7 @@ _mk_hook(
             text="全力秋招",
             desc="海投、笔试、面试连轴转。拿到 offer 就是这一年的胜利。",
             effects={"intern": 3, "network": 3, "portfolio": 2},
-            resources={"fatigue": 9, "money": 4},
+            resources={"fatigue": 9},
             flags=("qiuzhao_push",),
             track="job",
         ),
@@ -398,7 +398,7 @@ _mk_hook(
             text="闭关考研冲刺",
             desc="政治、英语、专业课三轮同时推进，放弃所有招聘会。",
             effects={"exam": 6, "gpa": 1},
-            resources={"fatigue": 12, "money": -4},
+            resources={"fatigue": 12},
             flags=("kaoyan_push",),
             track="kaoyan",
         ),
@@ -427,8 +427,8 @@ _mk_hook(
 # 这是四条"应试型"赛道的最终判定 —— 保研与科研靠成果 flag（推免资格 / 论文），
 # 考研、就业、考公、留学靠这里的 resolve 判定授予 flag。
 _mk_hook(
-    "k_sem14_result",
-    14,
+    "k_sem8_result",
+    8,
     "结果陆续出来了",
     (
         "名单公示、拟录取通知、offer 邮件、复试线——这一学期你会在各种"
@@ -555,6 +555,16 @@ def hooks_for_semester(semester: int) -> list[Hook]:
     return [hook for hook in HOOKS.values() if hook.semester == semester]
 
 
+# 结局抉择：答完它就代表这一局结束（授予考研/就业/考公/留学 flag，
+# 或选择安稳收尾）。engine 靠这个 id 判断"该收尾了"，所以它必须和
+# 上面大四下的那个抉择保持一致。改 id 时两处一起改。
+FINAL_HOOK_ID = "k_sem8_result"
+
+# 所有抉择都必须落在这个区间内，否则引擎的抽取顺序会出错。
+HOOK_SEMESTER_MIN = 1
+HOOK_SEMESTER_MAX = 8
+
+
 # ================================================================ 自检
 
 def _validate() -> None:
@@ -595,8 +605,34 @@ def _validate() -> None:
 
     if len(HOOKS) != 4:
         problems.append("关键抉择应有 4 个，实际 %d" % len(HOOKS))
+
+    # 结局抉择必须存在，而且是**唯一**落在最后一个学期的抉择。
+    # engine 靠它判断"这一局什么时候结束"：如果它不存在，或者最后一个
+    # 学期没有抉择，游戏会在没做结局判定时就结束（上一版就是这么坏的）。
+    if FINAL_HOOK_ID not in HOOKS:
+        problems.append("找不到结局抉择 %s" % FINAL_HOOK_ID)
+    else:
+        final = HOOKS[FINAL_HOOK_ID]
+        if final.semester != C.TOTAL_SEMESTERS:
+            problems.append(
+                "结局抉择 %s 应在第 %d 学期，实际第 %d 学期"
+                % (FINAL_HOOK_ID, C.TOTAL_SEMESTERS, final.semester)
+            )
+        last_sem = max(h.semester for h in HOOKS.values())
+        at_last = [h.id for h in HOOKS.values() if h.semester == last_sem]
+        if len(at_last) != 1:
+            problems.append("最后一个学期应有且只有 1 个抉择，实际 %r" % (at_last,))
+        if at_last != [FINAL_HOOK_ID]:
+            problems.append("最后一个学期的抉择必须是 %s，实际 %r" % (FINAL_HOOK_ID, at_last))
+
+    semesters = sorted(h.semester for h in HOOKS.values())
+    if len(set(semesters)) != len(semesters):
+        problems.append("有两个抉择挤在同一个学期：%r" % (semesters,))
+    if len(HOOKS) >= 2 and semesters[0] < 2:
+        problems.append("第 1 学期不该有抉择（大一上还没有要抉择的事）：%r" % (semesters,))
+
     for hook in HOOKS.values():
-        if not (1 <= hook.semester <= C.TOTAL_SEMESTERS):
+        if not (HOOK_SEMESTER_MIN <= hook.semester <= HOOK_SEMESTER_MAX):
             problems.append("抉择 %s 的学期越界" % hook.id)
         if len(hook.options) < 2:
             problems.append("抉择 %s 至少要 2 个选项" % hook.id)

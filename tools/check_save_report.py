@@ -63,8 +63,17 @@ def main() -> int:
 
     # 把"读档后"和"对照组"两组数字抓出来直接比一遍，
     # 不依赖报告里那句人写的"全部一致"。
-    after = re.search(r"读档后：学期=(\S+)\s+属性合计=(\d+)\s+gpa=(\d+)\s+research=(\d+)\s+fatigue=(\d+)\s+money=(\d+)", text)
-    before = re.search(r"对照组 gpa=(\d+)\s+research=(\d+)\s+fatigue=(\d+)\s+money=(\d+)", text)
+    #
+    # 注意：经济（money）已经从游戏里移除了，所以这里比对的是
+    # 学期 / 属性合计 / 三个代表性属性 / 疲劳。
+    after = re.search(
+        r"读档后：学期=(\S+)\s+属性合计=(\d+)\s+gpa=(\d+)\s+research=(\d+)\s+fatigue=(\d+)",
+        text,
+    )
+    before = re.search(
+        r"对照组 gpa=(\d+)\s+research=(\d+)\s+fatigue=(\d+)",
+        text,
+    )
     if not after:
         problems.append("找不到「读档后：…」那行，无法核对数值")
     if not before:
@@ -74,11 +83,14 @@ def main() -> int:
             ("gpa", after.group(3), before.group(1)),
             ("research", after.group(4), before.group(2)),
             ("fatigue", after.group(5), before.group(3)),
-            ("money", after.group(6), before.group(4)),
         ]
         for name, got, want in pairs:
             if got != want:
                 problems.append("%s 读档后是 %s，存档时是 %s" % (name, got, want))
+        # 学期也要对得上，否则"读回来的不是存下去的那一局"
+        sem = re.search(r"构造完成：学期=(\S+?)\s", text)
+        if sem and not after.group(1).startswith(sem.group(1)):
+            problems.append("读档后的学期是 %s，存档时是 %s" % (after.group(1), sem.group(1)))
 
     if problems:
         print("存档往返校验未通过：")

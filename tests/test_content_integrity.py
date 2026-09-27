@@ -21,9 +21,8 @@ from game.core import starts as STR
 VALID_TAGS = frozenset({
     "study", "gpa", "exam", "english", "research", "lab", "intern", "work",
     "project", "portfolio", "network", "social", "leadership", "party", "body",
-    "sport", "mind", "rest", "hobby_sport", "hobby_art", "hobby_music",
-    "hobby_gaming", "hobby_reading", "hobby_screen", "hobby_food",
-    "hobby_volunteer", "contest", "cert", "volunteer", "money",
+    "sport", "mind", "rest", "entertain", "hobby", "contest", "cert",
+    "volunteer", "art", "music", "gaming", "reading", "screen", "food",
 })
 
 VALID_AFFINITY = frozenset({"ace", "cadre", "scholar", "artisan", "normal"})
@@ -61,18 +60,39 @@ def test_majors_have_distinct_attr_focus():
 
 
 def test_contest_count_and_uniqueness():
-    assert 60 <= len(CON.CONTEST_LIST) <= 90
+    """5 个大类，每个 4 个阶梯。
+
+    刻意不写具体竞赛名（玩家反馈：不需要具体竞赛），所以数量是定死的：
+    CONTEST_LIST 是 5 个大类，每个大类内部展开 4 个阶梯。
+    """
+    assert len(CON.CONTEST_LIST) == len(C.CONTEST_CATEGORIES)
+    assert len(CON.CONTEST_LIST) == 5
     ids = [contest.id for contest in CON.CONTEST_LIST]
     assert len(ids) == len(set(ids))
     assert all(cid.startswith("c_") for cid in ids)
+    for contest in CON.CONTEST_LIST:
+        assert contest.tiers == C.CONTEST_TIERS, f"{contest.id} 的阶梯不全"
+        assert contest.id[2:] in C.CONTEST_CATEGORIES, f"{contest.id} 不是登记过的大类"
 
 
-def test_every_major_has_enough_contests():
+def test_every_major_sees_enough_contest_categories():
+    """每个专业至少看得见 3 个大类，且综合类对所有人开放。
+
+    大类粒度是有意为之：上一版按专业切 60 多个具体比赛，玩家反馈"太细分"。
+    现在专业差异体现在"看得见哪几个大类"，而不是"看得见哪个比赛"。
+    """
     for major_id in MAJ.all_ids():
-        visible = CON.for_major(major_id)
-        dedicated = CON.dedicated(major_id)
-        assert len(visible) >= 6, f"{major_id} 只看得见 {len(visible)} 个竞赛"
-        assert len(dedicated) >= 3, f"{major_id} 只有 {len(dedicated)} 个专属竞赛"
+        visible = {c.id for c in CON.for_major(major_id)}
+        assert len(visible) >= 3, f"{major_id} 只看得见 {len(visible)} 个竞赛大类"
+        assert "c_comprehensive" in visible, f"{major_id} 看不到综合类，太苛刻了"
+
+
+def test_contest_categories_actually_differ_by_major():
+    """大类必须有专业倾向，否则"专业决定竞赛"就名存实亡。"""
+    pools = {major_id: {c.id for c in CON.for_major(major_id)} for major_id in MAJ.all_ids()}
+    assert pools["biz"] != pools["mech"], "商科和机械看见的竞赛不该一样"
+    assert "c_business" in pools["biz"] and "c_business" not in pools["mech"]
+    assert "c_engineering" in pools["mech"] and "c_engineering" not in pools["hum"]
 
 
 def test_contests_have_real_names_and_notes():
@@ -125,16 +145,24 @@ def test_card_ids_are_unique():
 
 
 def test_general_card_count():
-    assert len(ACT.GENERAL_CARDS) >= 90
+    """通用卡是每个专业都能投的骨架，太少会出现"没牌打"的学期。"""
+    assert len(ACT.GENERAL_CARDS) >= 36
     for card in ACT.GENERAL_CARDS:
         assert card.majors == (), f"通用卡 {card.id} 不该限定专业"
 
 
 def test_per_major_card_counts():
-    expected = {"cs": 32, "biz": 32, "mech": 30, "civil": 30, "sci": 30, "hum": 28, "ocean": 26, "med": 26}
-    for major_id, want in expected.items():
-        got = len(ACT.major_cards(major_id))
-        assert got == want, f"{major_id} 的专属卡应为 {want}，实际 {got}"
+    """每个大专业类都要有足够的专属卡。
+
+    竞赛改成大类之后，专业差异**只剩专属行动卡**这一条通道，
+    所以这里按专业逐一盯死数量，少了就是那个专业玩不下去。
+    """
+    expected = {"cs": 4, "biz": 5, "mech": 3, "civil": 3, "sci": 3, "hum": 4, "ocean": 3, "med": 4}
+    actual = {major_id: len(ACT.major_cards(major_id)) for major_id in MAJ.all_ids()}
+    assert actual == expected, f"专属卡数量变了：{actual}"
+    for major_id, cards in ((m, ACT.major_cards(m)) for m in MAJ.all_ids()):
+        for card in cards:
+            assert major_id in card.majors, f"{card.id} 不含 {major_id}"
 
 
 def test_every_major_semester_has_two_dedicated_cards():
@@ -179,7 +207,7 @@ def test_card_fields_are_legal():
             assert affinity in VALID_AFFINITY, f"{card.id} 含非法起步线 {affinity}"
         for key, value in card.attribute_gate.items():
             assert key in C.ATTRS, f"{card.id} 门槛属性非法 {key}"
-            assert 5 <= value <= 20, f"{card.id} 门槛 {key}={value} 超出 5-20"
+            assert 4 <= value <= 16, f"{card.id} 门槛 {key}={value} 超出 4-16"
         if card.hobby:
             hobby_id, xp = card.hobby
             assert hobby_id in C.HOBBY_KEYS, f"{card.id} 引用了不存在的爱好 {hobby_id}"
@@ -225,8 +253,14 @@ def test_card_text_is_meaningful():
 
 
 def test_safe_fallback_cards_span_the_whole_game():
+    """保底卡：随时可投、收益稳定、不吃门槛。
+
+    它们是"这个学期不知道干什么"时的落点，所以必须覆盖全部 8 个学期。
+    """
     safe = [card for card in ACT.ALL_CARDS if card.rarity == "safe"]
-    assert len(safe) >= 6, "保底卡太少"
+    assert len(safe) >= 4, "保底卡太少"
+    for card in safe:
+        assert not card.attribute_gate, f"保底卡 {card.id} 不该有门槛"
     covered = set()
     for card in safe:
         covered.update(range(card.sem_lo, card.sem_hi + 1))
@@ -249,17 +283,28 @@ def test_contest_cards_are_wellformed():
 
 
 def test_node_count_and_uniqueness():
-    assert len(SKT.NODE_LIST) == 60
+    """6 条赛道 × 4 个阶段 + 6 个共享节点 = 30。
+
+    上一版是 60 个节点，对 24 个行动点来说太密（一次行动能连解好几个）。
+    """
+    assert len(SKT.NODE_LIST) == 30
+    assert len(SKT.NODE_LIST) == len(C.TRACKS) * C.NODES_PER_TRACK + C.SHARED_NODE_COUNT
     ids = [node.id for node in SKT.NODE_LIST]
     assert len(ids) == len(set(ids))
 
 
 def test_track_and_shared_node_distribution():
     for track in C.TRACKS:
-        assert len(SKT.for_track(track)) == 8, track
-    assert len(SKT.shared_nodes()) == 8
-    major_specific = [node for node in SKT.NODE_LIST if node.majors]
-    assert len(major_specific) == 4
+        assert len(SKT.for_track(track)) == C.NODES_PER_TRACK, track
+    assert len(SKT.shared_nodes()) == C.SHARED_NODE_COUNT
+    # 共享节点对所有赛道开放，不该绑专业
+    for node in SKT.shared_nodes():
+        assert not node.majors, f"共享节点 {node.id} 绑了专业"
+    for track in C.TRACKS:
+        nodes = SKT.for_track(track)
+        assert len({n.stage for n in nodes}) == len(nodes), (
+            f"{track} 的节点阶段有重复：{[n.stage for n in nodes]}"
+        )
 
 
 def test_node_requires_reference_real_nodes():
@@ -317,7 +362,7 @@ def test_node_flags_are_granted_somewhere():
 
 
 def test_track_stage_progression_is_ordered():
-    expected = {"baseline": 0, "core": 1, "expert": 2, "master": 3, "capstone": 4}
+    expected = {"baseline": 0, "core": 1, "expert": 2, "capstone": 3}
     for track in C.TRACKS:
         nodes = SKT.for_track(track)
         stages = [expected[node.stage] for node in nodes]
@@ -334,11 +379,16 @@ def test_each_track_has_a_capstone():
 # ================================================================ 爱好
 
 
-def test_eight_hobbies_with_six_levels():
+def test_eight_hobbies_with_enough_levels():
+    """8 大类爱好，每类至少要有 HOBBY_MAX_LEVEL+1 级称号。
+
+    hobby.levels 可以多写（留出"满级之后"的称号），但不能少，
+    少了 level_of 会返回 clamp 之后的等级却在表里找不到称号。
+    """
     assert len(HOB.HOBBY_LIST) == 8
     assert set(hobby.id for hobby in HOB.HOBBY_LIST) == set(C.HOBBY_KEYS)
     for hobby in HOB.HOBBY_LIST:
-        assert len(hobby.levels) == C.HOBBY_MAX_LEVEL + 1, hobby.id
+        assert len(hobby.levels) >= C.HOBBY_MAX_LEVEL + 1, hobby.id
         assert hobby.name and hobby.desc
         for index, level in enumerate(hobby.levels):
             assert level.level == index

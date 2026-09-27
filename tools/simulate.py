@@ -162,8 +162,18 @@ def play_one(seed: int, strategy, major: str, start_id: str, verbose: bool = Fal
         if not visible:
             break
 
-        # 每学期留 1 点给休息，避免疲劳一路顶到惩罚线
-        budget = max(1, eng.ap - 1) if eng.ap > 2 else eng.ap
+        # 每学期固定留 1 点给休息类卡片。
+        #
+        # 注意：这里必须**真的挑一张休息卡**，不能只是少挑一张 ——
+        # 疲劳是按行动点计的，只有带 rest/entertain/sport 标签的卡才抵消疲劳。
+        # 早先的版本只是把 budget 减 1，结果 AI 全程疲劳 90+，测出来的分布是假的。
+        rest_pool = [
+            c for c in visible
+            if "rest" in c.tags or "entertain" in c.tags or "sport" in c.tags
+        ]
+        reserve_rest = bool(rest_pool) and eng.ap >= 2
+        budget = max(1, eng.ap - 1) if reserve_rest else eng.ap
+
         ranked = sorted(visible, key=lambda c: -_card_value(c, strategy))
 
         chosen: list[str] = []
@@ -174,10 +184,13 @@ def play_one(seed: int, strategy, major: str, start_id: str, verbose: bool = Fal
             # 同一张卡最多在同一学期投 2 次（第 3 次收益太低）
             if used[card.id] >= 2:
                 continue
-            if any(key in ("body", "mind") for key in (card.effects or {})) and len(chosen) >= budget - 0:
-                pass
             chosen.append(card.id)
             used[card.id] += 1
+
+        # 补上那张休息卡
+        if reserve_rest:
+            best_rest = max(rest_pool, key=lambda c: _card_value(c, strategy))
+            chosen.append(best_rest.id)
 
         if not chosen:
             chosen = [visible[0].id]

@@ -164,7 +164,6 @@ class GameEngine(object):
                                 )
 
         self.state.fatigue = 0
-        self.state.money = 50
         self.state.semester = 1
         self.state.action_points = CFG.ap_for(1)
         self.state.rest_points = 0
@@ -295,6 +294,12 @@ class GameEngine(object):
             return CardResult(rejected="这一局已经结束了")
         if self.state.pending_event:
             return CardResult(rejected="先把眼前这件事处理完")
+        if self.state.pending_hook:
+            return CardResult(rejected="先把眼前这个抉择处理完")
+        if not card_ids:
+            # 空提交不能推进学期：否则会在没抽到抉择时静默跳过整个学期
+            # （曾经因此让大四下的"结果出来了"抉择永远触发不到）。
+            return CardResult(rejected="至少要选一个行动")
         if len(card_ids) > self.state.action_points:
             return CardResult(
                 rejected="行动点不够：还剩 %d 点，想投 %d 张"
@@ -350,14 +355,11 @@ class GameEngine(object):
             player = self.state.player
             delta = EffectDelta(
                 attrs_before=dict(player.attrs),
-                resources_before={"fatigue": self.state.fatigue, "money": self.state.money},
+                resources_before={"fatigue": self.state.fatigue},
             )
             EFX.add_attrs(player, gains, self.state.fatigue)
             delta.attrs_after = dict(player.attrs)
-            delta.resources_after = {
-                "fatigue": self.state.fatigue,
-                "money": self.state.money,
-            }
+            delta.resources_after = {"fatigue": self.state.fatigue}
             delta.notes.append("剩下的行动点用来睡觉和吃饭了")
             result.deltas.append(delta)
         self.state.action_points = 0
@@ -449,25 +451,35 @@ class GameEngine(object):
         history_entry["unlocked"] = [SKT.NODES[nid].name for nid in unlocked]
         history_entry["traits"] = dict(player.traits)
 
-        # 5) 大四上的关键抉择
-        hooks = STR.hooks_for_semester(semester)
-        hook = next((h for h in hooks if h.id not in state.used_hooks), None)
-
-        # 6) 进入下一学期
         state.history.append(history_entry)
         player.begin_semester()
         state.rest_points = 0
 
+        # 大四下的行动点用完了 → 这一局到此为止。
+        # 上面这四步是"学期末结算"，对大四下同样要跑一次（不然大四下投出去的
+        # 行动点既不吃超投惩罚也不涨疲劳），跑完直接收尾。
         if semester >= CFG.TOTAL_SEMESTERS:
-            state.finished = True
-            self._ending = END.evaluate(state)
+            history_entry["notes"] = list(history_entry["notes"]) + ["四年到这里就过完了"]
+            self._finish(state)
             return
 
-        state.semester = semester + 1
-        state.action_points = CFG.ap_for(state.semester)
+        next_sem = semester + 1
+        state.semester = next_sem
+        state.action_points = CFG.ap_for(next_sem)
         self._semester_start_flags = set(player.flags)
 
-        # 7) 事件 / 抉择抽取
+        # 5) 即将进入的那个学期有没有关键抉择。
+        #
+        # **这里必须查 next_sem，不能查 semester**：hook.semester = N 的语义是
+        # "进入第 N 学期时抛出"，而 advance() 是在第 N-1 学期结束时跑的。
+        # 查成 semester 会让所有抉择晚一个学期，并且让大四下的
+        # "结果陆续出来了" 排到结局判定之后 —— 永远触发不到。
+        hook = next(
+            (h for h in STR.hooks_for_semester(next_sem) if h.id not in state.used_hooks),
+            None,
+        )
+
+        # 6) 抉择优先于随机事件（同一学期不会再抽事件，避免一次弹两个窗）
         if hook is not None:
             state.pending_hook = hook.id
             state.used_hooks.add(hook.id)
@@ -477,6 +489,13 @@ class GameEngine(object):
                 state.pending_event = event.id
                 state.seen_events.add(event.id)
         self._record_semester_start()
+
+    def _finish(self, state: GameState) -> None:
+        """收尾：打上结束标记并算出结局。幂等。"""
+        if state.finished:
+            return
+        state.finished = True
+        self._ending = END.evaluate(state)
 
     # ---------------------------------------------------------------- 结算子步骤
 
@@ -582,6 +601,10 @@ class GameEngine(object):
 
         resolve_track = getattr(option, "resolve", "")
         if resolve_track:
+            # 记住"玩家最后选了哪条路"：结局判定优先用它。否则一个顺手
+            # 把绩点刷高的人，即使最后选了"去查初试成绩"，也会因为保研门槛
+            # 也被满足而被判成保研 —— 最后一次抉择就白选了。
+            self.state.final_choice = resolve_track
             chance = STR.resolve_chance(
                 self.state.player.attrs,
                 resolve_track,
@@ -606,6 +629,32 @@ class GameEngine(object):
         self.state.pending_hook = None
         result = CardResult(deltas=[delta], ap_left=self.state.action_points)
         result.message = outcome
+
+        # 只有大四下的收尾抉择（FINAL_HOOK_ID）答完才算这一局结束。
+        # 不能只看 semester：5/6/7 学期的抉择会晚一个学期生效
+        # （第 N 学期的抉择在进入第 N+1 学期时抛出），
+        # 若按学期号判断会把它们误当成结局判定。
+        if hook.id == STR.FINAL_HOOK_ID:
+            self.state.semester = max(self.state.semester, CFG.TOTAL_SEMESTERS)
+            # 大四下的行动点还没花，但这一局已经结束了，所以
+            # 直接在历史里补上最后一条 —— 否则 UI 的学期回顾只到"大三下"。
+            self.state.history.append(
+                {
+                    "semester": self.state.semester,
+                    "label": CFG.semester_label(self.state.semester),
+                    "calendar": self.calendar_label(),
+                    "ap_used": 0,
+                    "cards": [],
+                    "attrs": dict(self.state.player.attrs),
+                    "fatigue": self.state.fatigue,
+                    "penalty": "",
+                    "fatigue_delta": 0,
+                    "notes": [outcome or "最后半年就这样过去了"],
+                    "unlocked": [],
+                    "traits": dict(self.state.player.traits),
+                }
+            )
+            self._finish(self.state)
         return result
 
     # ---------------------------------------------------------------- 竞赛
@@ -761,9 +810,16 @@ def _has(module: Any, name: str) -> bool:
 def STR_ending_gate(track: str) -> dict[str, int]:
     """取某条赛道用于"上岸判定"的门槛。
 
-    优先用 config 里的门槛，但只保留判定真正会看的属性（见其实 RESOLVE_ATTRS），
-    并且取所有门槛组里**最高**的那一档 —— 判定要严于"最低门槛组"，
-    否则玩家会走完门槛组 A 却在判定里栽在门槛组 B 的属性上。
+    只保留判定真正会看的属性（见 RESOLVE_ATTRS），并且每个属性取所有门槛组里
+    **最低**的那一档。
+
+    为什么是最低而不是最高：结局判定用的是"任意一组门槛过了就算命中"
+    （endings.evaluate_track）。如果这里取最高，判定就变成"必须同时满足所有
+    路线" —— 保研会被要求 gpa 26 且 research 13 且 english 12，比它最难的单条
+    路线还高一截。实测那会让走保研路线的人 90% 掉进兜底结局。
+
+    取最低得到的是"至少要达到的水平"：比它低就一定过不了任何一组，
+    正好适合当分子分母。
     """
     wanted = set(STR.RESOLVE_ATTRS.get(track, ()))
     groups = CFG.ENDING_ALTS.get(track)
@@ -777,8 +833,11 @@ def STR_ending_gate(track: str) -> dict[str, int]:
     out: dict[str, int] = {}
     for gate in candidates:
         for key, need in gate.items():
-            if key in wanted:
-                out[key] = max(out.get(key, 0), int(need))
+            if key not in wanted:
+                continue
+            value = int(need)
+            if key not in out or value < out[key]:
+                out[key] = value
     return out
 
 

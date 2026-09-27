@@ -2,24 +2,31 @@
 
 ================================ 设计要点（改之前先读） ================================
 
-**尺度**：属性是 0-100 的整数，但一局里的现实可达区间是 **0-50**（单属性专精）
-到 0-25（多线铺开）。全局预算只有 TOTAL_ACTIONS = 38 个行动点，而且单学期同一
-属性投超过 FATIGUE_ATTR_THRESHOLD 点会吃疲劳惩罚 —— 这两条共同把数值压住。
+**时间**：一局 = **大学四年 = 8 个学期**（大一上到大四下），每学期 3 个行动点，
+全局预算 24 点。这是唯一的硬约束。所有门槛都按 24 点标定过。
 
-**门槛设 30-45 区间。**
+**尺度**：属性 0-100，但一局里的现实可达区间是 **0-30**（单属性专精）
+到 0-15（三线铺开）。参考实算数字：
 
-参考数字（EFFECT_BASE = 5，实算过）：
-    一次普通行动给某属性 +5 点；重复投同一张卡按 REPEAT_DECAY 递减
-    投 1 次 +5 / 2 次累计 +8 / 3 次累计 +11 / 4 次累计 +14
-    全学期 38 点 → 单属性专精约 50-60（会被疲劳挡住），三线铺开各约 25-30
-    实际上「专精一个属性 + 扶持两个」是最强的打法，能到 45/32/28 左右
+    一次普通行动给某属性 +4~6
+    单学期一个属性最多投 2 点不吃惩罚（8 学期 = 16 点）
+    投 1 点累计 +5 / 2 点累计 +9 / 3 点累计 +12 / 4 点累计 +14
+    24 点全押一个属性 ≈ 28-32；分三线 ≈ 各 13-16
 
-**「投入越多收益越高」用三层同时表达**：
-    1. 同一张卡在本学期重复投 → 收益按 REPEAT_DECAY 递减
-    2. 同一方向换不同的卡去投 → 不递减（这是正解，鼓励用不同手段做同一件事）
-    3. 单学期同一属性投超 FATIGUE_ATTR_THRESHOLD 点 → 疲劳惩罚
+**门槛在 8-26 之间。** 不要再按 0-100 均匀分布去设。
 
-**所有公式只在 effects.py 里实现一次，本文件只有数字。**
+**疲劳是真正的约束**（上一版失效了，这版重做）：
+    每个行动点累积 4 点疲劳；一个休息类行动点消化 10 点。
+    "3 点全干活"每学期净 +12，硬扛 4 个学期就撞惩罚线（50）；
+    "2 干活 + 1 休息"是 -2，可以长期维持。
+    → **玩家必须定期安排休息，不能一路卷到底。**
+
+**收益三条规则**：
+    1. 同一张卡重复投 → 收益按 REPEAT_DECAY 递减
+    2. 同一方向换不同的卡投 → 不递减（正解：一个方向上换手段）
+    3. 单学期同一属性投超 FATIGUE_ATTR_THRESHOLD 点 → 额外扣心态和身体
+
+所有公式只在 effects.py 里实现一次，本文件只有数字。
 """
 
 from __future__ import annotations
@@ -78,18 +85,20 @@ ATTR_DESC: dict[str, str] = {
     "mind": "心理韧性。决定你能不能在低谷期继续推进。",
 }
 
-# 阶段称谓。一局里 45 左右已经是很极端的专精，所以 45+ 才算「顶尖」。
+# 阶段称谓。一局里 30 左右已经是很极端的专精。
 ATTR_BANDS: list[tuple[int, str]] = [
     (0, "入门"),
-    (12, "起步"),
-    (24, "良好"),
-    (36, "优秀"),
-    (45, "顶尖"),
+    (9, "起步"),
+    (17, "良好"),
+    (25, "优秀"),
+    (34, "顶尖"),
 ]
 
-# 进度条按这个值折算 100%（超出会显示为满格 + 金色描边）。
-# 必须等于 ATTR_BANDS 里的最高一档，否则 UI 的"满格"和文案的"顶尖"会打架。
-ATTR_SOFT_MAX = 45
+# 进度条按这个值折算 100%。必须等于 ATTR_BANDS 的最高档，
+# 否则 UI 的"满格"和文案的"顶尖"会打架。
+# 进度条满格 == 属性到顶。改一个记得改另一个。
+# 比 ATTR_MAX 略低，这样"顶尖"是能摸到的，而不是永远差一点。
+ATTR_SOFT_MAX = 34
 
 
 def attr_band(value: int) -> str:
@@ -107,17 +116,17 @@ def blank_attrs(value: int = 0) -> dict[str, int]:
 
 
 # ---------------------------------------------------------------- 资源
+#
+# 只有疲劳。**经济已移除**（玩家反馈那一行没用还占地方）。
 
-RESOURCES: tuple[str, ...] = ("fatigue", "money")
+RESOURCES: tuple[str, ...] = ("fatigue",)
 
 RESOURCE_NAMES: dict[str, str] = {
     "fatigue": "疲劳",
-    "money": "经济状况",
 }
 
 RESOURCE_DESC: dict[str, str] = {
-    "fatigue": "0 最轻松，100 撑不住。疲劳 >=60 所有收益打八折，>=85 触发透支。",
-    "money": "家庭支持度。越低越需要兼职，也越容易触发经济相关的随机事件。",
+    "fatigue": "0 最轻松，100 撑不住。疲劳到 50 收益打八折，到 80 会透支。",
 }
 
 RESOURCE_MIN = 0
@@ -145,7 +154,7 @@ TRACK_NAMES: dict[str, str] = {
 }
 
 TRACK_DESC: dict[str, str] = {
-    "baoyan": "大一就在为前六学期排名打工。绩点、加分、英语、科研，一个都不能塌。",
+    "baoyan": "前六学期排名决定一切。绩点、加分、英语、科研，一个都不能塌。",
     "kaoyan": "大三大四的孤注一掷。数学与专业课是双刃剑，掉一分都要命。",
     "job": "实习堆到能谈薪。经历、项目、证书、内推，简历上每一行都要有来处。",
     "gov": "入党 + 应试 + 干部经历，三条腿少一条就站不住。",
@@ -163,81 +172,69 @@ TRACK_COLORS: dict[str, str] = {
 }
 
 TRACK_MAX = 100
-
 TRACK_ORDER: tuple[str, ...] = TRACKS
 
-# 技能树节点授予的赛道倾向分
-TRACK_ALIGN_PER_NODE = 10
-
-# 赛道倾向达到此值就认为"这个人在这条路上"
+TRACK_ALIGN_PER_NODE = 12
 TRACK_COMMITTED_AT = 40
 
 
 # ---------------------------------------------------------------- 学期
-
-TOTAL_SEMESTERS = 16
-
-# 每学期可用行动点。索引 = 学期序号（1-16），第 0 位占位。合计 38 点。
 #
-# 分配采用「前重后轻」：大一有新鲜感、可能性最多，给得最多；越往后路越窄，
-# 大四上又在等结果（复试 / 九推 / 签约），所以大四整个两年只给 6 点。
-# 大四上（第 13 学期）的 2 点里**不包含**关键抉择 —— 抉择本身不花行动点。
-#
-# 38 是全游戏的紧凑预算，所有属性门槛都按这个预算标定。改这里必须同步重跑
-# tools/simulate.py，否则结局分布会失衡。
+# 大学本科 = 4 年 = **8 个学期**。
+# 上一版写成 16 是把每学年拆成了 4 段，不真实，也没必要。
+
+TOTAL_SEMESTERS = 8
+SEMESTERS_PER_YEAR = 2
+
+# 每学期 3 个行动点，四年共 24 点。
+AP_PER_SEMESTER = 3
+TOTAL_ACTIONS = 24
+
+# 大四两个学期各少 1 点（在等结果、写毕设），少掉的匀给大一，
+# 所以是"前重后轻"，但总量仍然是 24。索引 = 学期序号，第 0 位占位。
 AP_BY_SEMESTER: tuple[int, ...] = (
-    0,     # 0  占位
-    4,     # 1  大一上 —— 可能性最多的一学期
-    3,     # 2  大一下
-    3,     # 3  大二上
-    3,     # 4  大二下
-    3,     # 5  大三上
-    3,     # 6  大三下（保研算分最重的一学期）
-    3,     # 7
-    3,     # 8
-    2,     # 9  专业课压上来，时间开始不够用
-    2,     # 10
-    2,     # 11 秋招与九推同时开跑
-    2,     # 12 结果期
-    2,     # 13 大四上（关键抉择学期，抉择本身不花点）
-    1,     # 14 大四上收尾
-    1,     # 15 大四下
-    1,     # 16 大四下（告别）
+    0,      # 0 占位
+    4,      # 1 大一上（可能性最多的一学期）
+    3,      # 2 大一下
+    3,      # 3 大二上
+    3,      # 4 大二下
+    3,      # 5 大三上
+    3,      # 6 大三下
+    3,      # 7 大四上（关键抉择学期，抉择本身不花行动点）
+    2,      # 8 大四下（收尾与告别）
 )
 
-TOTAL_ACTIONS = sum(AP_BY_SEMESTER)
-
-assert TOTAL_ACTIONS == 38, (
-    f"行动点总量应为 38，实际 {TOTAL_ACTIONS}。"
-    "改这张表就必须重跑 tools/simulate.py 重新标定结局门槛。"
+assert sum(AP_BY_SEMESTER) == TOTAL_ACTIONS, (
+    "行动点总量应为 %d，实际 %d。改这张表必须重跑 tools/simulate.py 重新标定门槛。"
+    % (TOTAL_ACTIONS, sum(AP_BY_SEMESTER))
 )
 
-# 学期末剩余行动点转成心态/身体的"好好休息"收益
+# 学期末剩余行动点转成"好好休息"的收益
 SPARE_AP_MIND = 2
 SPARE_AP_BODY = 1
 
 
+def year_of(sem: int) -> int:
+    """学期序号 → 年级（1-4）。"""
+    return max(1, min(4, (sem + 1) // 2))
+
+
 def ap_for(sem: int) -> int:
-    """取某学期的行动点。越界时回落到 3。"""
+    """取某学期的行动点。越界时回落到 AP_PER_SEMESTER。"""
     if 1 <= sem < len(AP_BY_SEMESTER):
         return AP_BY_SEMESTER[sem]
-    return 3
+    return AP_PER_SEMESTER
 
 
 def semester_label(sem: int) -> str:
-    """把 1-16 的学期序号翻译成「大二上」这样的中文。"""
+    """把 1-8 的学期序号翻译成「大二上」这样的中文。"""
     if sem < 1:
         return "入学前"
     if sem > TOTAL_SEMESTERS:
         return "毕业后"
-    year = min(4, (sem - 1) // 2 + 1)
-    half = "上" if (sem - 1) % 2 == 0 else "下"
-    return f"大{'一二三四'[year - 1]}{half}"
-
-
-def year_of(sem: int) -> int:
-    """学期序号 → 年级（1-4）。"""
-    return max(1, min(4, (sem - 1) // 2 + 1))
+    year = (sem + 1) // 2
+    half = "上" if sem % 2 == 1 else "下"
+    return f"大{'一二三四'[min(year, 4) - 1]}{half}"
 
 
 # 开局可选的入学年份
@@ -246,12 +243,14 @@ YEAR_CHOICES: tuple[int, ...] = (2025, 2026, 2027, 2028)
 
 # ---------------------------------------------------------------- 效果结算
 
-# 品质 → 基础收益乘数
+# 卡片 effects 的值就是点数，这里只是品质带来的小幅加成。
+# 上限刻意压在 1.1：24 个行动点经不起 1.4 倍的复利。
+# 实算：普通卡主属性 5 点 -> 5；稀有 5 点 -> 6；史诗 5 点 -> 6。
 RARITY_MULT: dict[str, float] = {
-    "epic": 1.4,     # 史诗
-    "rare": 1.2,     # 稀有
-    "common": 1.0,   # 普通
-    "safe": 0.8,     # 保底（永远可用，收益最低）
+    "epic": 1.10,
+    "rare": 1.05,
+    "common": 1.00,
+    "safe": 0.90,
 }
 
 RARITY_NAMES: dict[str, str] = {
@@ -268,61 +267,86 @@ RARITY_COLORS: dict[str, str] = {
     "safe": "#4E5766",
 }
 
-# 作者尺度的标称基准：内容规范里说"一张卡的总属性点建议 4-8"，取 10 当上限。
-# 它**不参与任何计算**，只是文档性的常量，被 tools/simulate.py 的报告用来做参照。
-# 真正的公式见 effects.attr_gain：
-#     普通卡  实际收益 = 卡片 effects 值 × 品质乘数
-#     竞赛卡  实际收益 = strengths 权重 × 阶梯基数 × CONTEST_STRENGTH_SCALE
-AUTHOR_SCALE = 10.0
+# 作者尺度的标称上限：内容规范说"一张卡的总属性点建议 3-6"。
+# 不参与计算，只是文档性常量。
+AUTHOR_SCALE = 6.0
 
-# 竞赛卡的权重尺度换算。竞赛的 strengths 是相对权重（如 {"portfolio": 3, "research": 1}），
-# 比普通卡的点数小得多，所以要乘一个系数才和普通卡可比。
+# 竞赛卡的权重尺度换算（竞赛用相对权重，不是绝对点数）
 CONTEST_STRENGTH_SCALE = 2.0
 
-# 同一张卡在本学期内每多投一次，收益乘这个系数
+# 真实公式见 effects.attr_gain：
+#     普通卡  实际收益 = 卡片 effects 值 × 品质乘数
+#     竞赛卡  实际收益 = strengths 权重 × 阶梯基数 × CONTEST_STRENGTH_SCALE × 品质乘数
+EFFECT_BASE = 5.0
+
 REPEAT_DECAY = 0.75
-
-# 收益下限（属性点）：再怎么递减，一次行动至少给这么多
 EFFECT_FLOOR = 1
-
-# 已有相关技能树节点时的收益加成
 NODE_EFFECT_MULT = 1.10
-
-# 主攻竞赛的收益加成
 CONTEST_MAIN_MULT = 1.25
 
 
 # ---------------------------------------------------------------- 疲劳
+#
+# 上一版疲劳形同虚设：不休息每学期才 +1，八年下来也到不了惩罚线，
+# 于是"疯狂卷"没有代价。这一版改成**按行动点计价**：
+#
+#     每个行动点  +FATIGUE_PER_ACTION (4)
+#     每个休息点  -FATIGUE_REST_RELIEF (10)
+#     期末自然恢复 -FATIGUE_NATURAL_RECOVERY (2)
+#
+#     3 点全干活       → +10/学期  → 4 个学期撞惩罚线
+#     2 干活 + 1 休息  → -4/学期   → 可以一直维持
+#     1 干活 + 2 休息  → -18/学期
+#
+# 所以"想卷就得付疲劳代价、想保持状态就得少做事"是真的取舍。
 
-FATIGUE_ATTR_THRESHOLD = 3      # 单学期同一属性投入 >= 此值 → 触发惩罚（即最多 2 点无惩罚）
-FATIGUE_ATTR_MIND_HIT = 3       # 惩罚：心态
-FATIGUE_ATTR_BODY_HIT = 2       # 惩罚：身体
+FATIGUE_PER_ACTION = 4
+FATIGUE_REST_RELIEF = 10
+FATIGUE_NATURAL_RECOVERY = 2
 
-# 标记为这些 tag 的行动算"休息"，能抵消疲劳
-REST_TAGS: frozenset[str] = frozenset({"rest", "sport", "hobby_sport"})
+# 标记为这些 tag 的行动算"休息"
+REST_TAGS: frozenset[str] = frozenset({"rest", "entertain", "sport", "hobby"})
 
-FATIGUE_PER_SEMESTER = 4        # 每学期基础累积的疲劳
-FATIGUE_REST_RELIEF = 4         # 每个休息类行动点抵消的疲劳（大二起作用明显）
-FATIGUE_LOW_MIND_RELIEF = 2     # 心态高时的额外恢复
-FATIGUE_HIGH_MIND_RELIEF_AT = 18  # 心态 >= 此值时给额外恢复
+# 单学期同一属性投 ≥ 此值 → 额外扣心态和身体
+FATIGUE_ATTR_THRESHOLD = 3
+FATIGUE_ATTR_MIND_HIT = 3
+FATIGUE_ATTR_BODY_HIT = 2
 
-FATIGUE_PENALTY_AT = 60         # 疲劳达到此值，所有正收益乘 FATIGUE_PENALTY_MULT
+# 疲劳达到此值：所有正收益乘 FATIGUE_PENALTY_MULT
+FATIGUE_PENALTY_AT = 50
 FATIGUE_PENALTY_MULT = 0.8
-FATIGUE_BURNOUT_AT = 85         # 疲劳达到此值，触发透支
+
+# 疲劳达到此值：透支，额外扣心态
+FATIGUE_BURNOUT_AT = 80
 FATIGUE_BURNOUT_MIND_HIT = 6
 
-FATIGUE_NATURAL_RECOVERY = 3    # 学期末自然恢复（略高于旧值，让放松的学期真的是负的）
+# 心态高时的额外恢复
+FATIGUE_HIGH_MIND_RELIEF_AT = 18
+FATIGUE_LOW_MIND_RELIEF = 2
 
 
-# ---------------------------------------------------------------- 溢出
+# ---------------------------------------------------------------- 上限
+#
+# **属性硬上限 30，且不做溢出转移。**
+#
+# 上一版上限是 100，而且满了之后会把多余点数"转给相邻属性"，相邻属性再转给
+# 它的相邻 —— 形成级联。实测一局下来作品 100、实习 94、科研 75，半张表糊满，
+# 玩家反馈的"作品分溢出太多"就是这个。
+#
+# 现在的做法：顶到 ATTR_MAX 就是顶到了，多出来的直接丢弃，并在结算时提示
+# "已满"。玩家想继续变强只能换方向 —— 这正是我们想要的引导。
 
-ATTR_MAX = 100
-
-# 某项属性已满时，正收益按此比例转给「相邻属性」（见 effects.OVERFLOW_NEIGHBORS）
-OVERFLOW_SHARE = 0.5
+# 36 是留了余量的硬顶。实测一个专精玩家（24 点全押一条线）能到 32 左右，
+# 所以硬顶高 4 点 —— 撞顶只可能在"专精到极致"时发生，不会成为常态。
+# 上一版硬顶就是 30，结果 100% 的局都有属性撞顶，UI 上的进度条全是满格。
+# UI 的进度条画到 ATTR_SOFT_MAX（34），也就是"顶尖"那一档。
+ATTR_MAX = 36
 
 
 # ---------------------------------------------------------------- 爱好
+#
+# 8 大类保留（"爱好"本身就是大类粒度）。投入走通用的「娱乐」类选项，
+# 不再每类都塞细碎的专属卡。
 
 HOBBY_KEYS: tuple[str, ...] = (
     "sport",
@@ -357,25 +381,37 @@ HOBBY_DESC: dict[str, str] = {
     "volunteer": "支教、献血、环保、赛事志愿。考公选调和留学文书都认这个。",
 }
 
-# 升到第 N 级所需累计经验。索引 = 等级（0-5，共 6 项）。
-# 每次投入给 HOBBY_XP_PER_ACTION(10) 经验，所以：
-#   L1 = 投 2 次 ・ L2 = 5 次 ・ L3 = 9 次 ・ L4 = 14 次 ・ L5 = 20 次
-# L5「精通」是"转正"等级：爱好变成技能树的正式节点，也是一局里很难达成的事。
-HOBBY_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 20, 50, 90, 140, 200)
+# 升到第 N 级所需累计经验。索引 = 等级（0-4，共 5 项）。
+# 一次投入 15 点：L1=1 次、L2=3 次、L3=5 次、L4=8 次。
+# 24 个行动点里练满一个爱好已经很奢侈，这是刻意的。
+HOBBY_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 15, 45, 75, 120)
 
-# 把爱好"转正"成技能树节点所需等级
-HOBBY_MASTER_LEVEL = 5
-
-HOBBY_MAX_LEVEL = 5
-
-# 每次投入爱好获得的经验
-HOBBY_XP_PER_ACTION = 10
-
-# 爱好经验进度条的上限（用于 UI 百分比）
-HOBBY_XP_MAX = 200
+HOBBY_MASTER_LEVEL = 4
+HOBBY_MAX_LEVEL = 4
+HOBBY_XP_PER_ACTION = 15
+HOBBY_XP_MAX = 120
 
 
 # ---------------------------------------------------------------- 竞赛
+#
+# **竞赛不写具体名字**（玩家反馈：不需要具体竞赛）。按大类划分，
+# 每类下面 4 个阶梯（校级 → 省级 → 国家级 → 国际级）。
+
+CONTEST_CATEGORIES: dict[str, tuple[str, str]] = {
+    "research": ("科研类竞赛", "数学建模、学科竞赛、实验创新这一路，靠脑子和论文说话。"),
+    "engineering": ("工程类竞赛", "设计、制造、成图、结构，拼的是动手能力和工程实现。"),
+    "business": ("商科类竞赛", "商业策划、案例分析、金融模拟，看你能不能把事讲成生意。"),
+    "humanities": ("人文类竞赛", "外语、辩论、模拟法庭、写作，比的是表达和思辨。"),
+    "comprehensive": ("综合类竞赛", "创新创业、挑战杯这种全校都能报的，容错高、上限也不错。"),
+}
+
+CONTEST_CATEGORY_ORDER: tuple[str, ...] = (
+    "research",
+    "engineering",
+    "business",
+    "humanities",
+    "comprehensive",
+)
 
 CONTEST_TIERS: tuple[str, ...] = ("school", "prov", "national", "intl")
 
@@ -393,25 +429,25 @@ CONTEST_TIER_ORDER: dict[str, int] = {
     "intl": 3,
 }
 
-# 各阶梯的收益基数。竞赛卡要明显比普通卡值钱，因为它是"长期押注一条线"的回报，
-# 而且有概率判定（可能拿不到奖）。配合 CONTEST_STRENGTH_SCALE 后，
-# 一个 strengths 权重和为 4 的竞赛卡：校赛约 16 点、国赛约 40 点。
+# 各阶梯的收益基数。配合 CONTEST_STRENGTH_SCALE 后，
+# 权重和 2 的竞赛卡：校赛约 12 点、国赛约 30 点、国际赛约 42 点。
+# 这是"押注一条线"的回报，但会吃好几点行动点，而且可能拿不到奖。
 CONTEST_TIER_EFFECT: dict[str, float] = {
-    "school": 2.0,
-    "prov": 3.0,
-    "national": 5.0,
-    "intl": 7.0,
+    "school": 3.0,
+    "prov": 4.5,
+    "national": 7.5,
+    "intl": 10.5,
 }
 
-# 各阶梯最早可打的学期
+# 各阶梯最早可打的学期（8 学期制）
 CONTEST_TIER_EARLIEST: dict[str, int] = {
-    "school": 3,      # 大二上
-    "prov": 4,        # 大二下
-    "national": 6,    # 大三上
-    "intl": 8,        # 大三下
+    "school": 1,      # 大一上
+    "prov": 2,        # 大一下
+    "national": 4,    # 大二下
+    "intl": 6,        # 大三下
 }
 
-# 各阶梯的通过门槛（用该竞赛 strengths 里权重最高的属性判定）
+# 各阶梯的通过门槛（用该竞赛关联属性里权重最高的那个判定）
 CONTEST_TIER_GATE: dict[str, float] = {
     "school": 3.0,
     "prov": 6.0,
@@ -419,116 +455,108 @@ CONTEST_TIER_GATE: dict[str, float] = {
     "intl": 16.0,
 }
 
-# 拿不到奖时的安慰收益比例
 CONTEST_FAIL_SHARE = 0.4
 CONTEST_FAIL_MIND_HIT = 2
 
-# 最多能主攻几个竞赛
 CONTEST_MAX_MAIN = 2
-
-# 在哪一学期开放「竞赛选型」
 CONTEST_MAIN_PICK_SEMESTER = 3
-
-# 队长的额外收益 / 有导师或学长的额外收益
 CONTEST_LEADER_BONUS = 2
 CONTEST_MENTOR_BONUS = 2
 
-# 竞赛相关 flag 名（供 endings / skilltree 使用）
 FLAG_CONTEST_NATIONAL = "contest_national"
 FLAG_CONTEST_INTL = "contest_intl"
 
 
 # ---------------------------------------------------------------- 技能树
+#
+# 60 个节点对 24 个行动点来说太密（一次行动能连解好几个）。
+# 收到 **30 个**：6 赛道 × 4 + 共享 6。
+
+NODES_PER_TRACK = 4
+SHARED_NODE_COUNT = 6
 
 STAGE_KEYS: tuple[str, ...] = (
-    "baseline",   # 基线
-    "core",       # 核心
-    "expert",     # 专精
-    "master",     # 精通
-    "capstone",   # 大成
+    "baseline",
+    "core",
+    "expert",
+    "capstone",
 )
 
 STAGE_NAMES: dict[str, str] = {
     "baseline": "基线",
     "core": "核心",
     "expert": "专精",
-    "master": "精通",
     "capstone": "大成",
 }
 
 
 # ---------------------------------------------------------------- 结局门槛
-
-# 每条赛道的属性门槛。键 = 属性名，值 = 需要达到的数值。
 #
-# 尺度换算：一局 38 个行动点，一次行动给某个属性 4-6 点。
-# 卡池供给是不均衡的（research / portfolio / mind 的卡远多于 exam / leadership），
-# 所以门槛必须按**各属性的实际供给**来设，而不是按同一个数字设。
-# 实测中位值（tools/simulate.py --by-strategy 的输出）：
-#     gpa ~ 31   english ~ 34   intern ~ 100(饱和)   research ~ 100(饱和)   exam ~ 22   leadership ~ 21
-# 下面的数字就是照这个分布标定的。
+# 标定方法（不要凭感觉改）：单属性专精理论上限 = 该属性最好的 8 张卡之和，
+# 实测能到 32 左右（硬顶 36）。门槛取这个上限的 60%-85%：
+#
+#     单属性门槛   20-27   （专精一条线就能过）
+#     多属性门槛   每条取上限的 40%-75%，合计相当于 1.5 条专精线
+#
+# 改完必须跑 tools/simulate.py，确认每类结局占 5%-45%。
 ENDING_GATES: dict[str, dict[str, int]] = {
-    "baoyan": {"gpa": 36, "research": 26, "english": 24},
-    "kaoyan": {"exam": 26, "gpa": 20, "english": 20},
-    "job": {"intern": 34},
-    "gov": {"exam": 24, "leadership": 20},
-    "abroad": {"english": 34, "gpa": 20},
-    "research": {"research": 44, "portfolio": 30},
+    # 保研要三条腿：绩点是硬门槛，科研和英语是加分项。
+    # 它也是唯一"flag 靠技能树给、不靠大四抉择判定"的赛道，所以门槛要更严，
+    # 否则所有顺手刷绩点的人都会自动拿到保研结局。
+    "baoyan": {"gpa": 26, "research": 15, "english": 15},
+    "kaoyan": {"exam": 22, "gpa": 12, "english": 12},
+    "job": {"intern": 24},
+    "gov": {"exam": 22, "leadership": 14},
+    "abroad": {"english": 24, "gpa": 12},
+    "research": {"research": 28},
 }
 
-# 备选门槛：满足其中任意一组即可（键是"门槛组"的名字，用于 UI 展示）。
-# 这样每条路都有至少两种走法，不至于只有一个死解。
 ENDING_ALTS: dict[str, dict[str, dict[str, int]]] = {
     "job": {
-        "实习路线": {"intern": 34},
-        "人脉路线": {"network": 30, "portfolio": 20},
+        "实习路线": {"intern": 24},
+        "人脉路线": {"network": 22, "portfolio": 14},
     },
     "abroad": {
-        "语言路线": {"english": 34, "gpa": 20},
-        "科研路线": {"english": 26, "research": 30},
+        "语言路线": {"english": 24, "gpa": 12},
+        "科研路线": {"english": 19, "research": 21},
     },
     "research": {
-        "专精路线": {"research": 44},
-        "论文路线": {"research": 30, "portfolio": 30},
+        "专精路线": {"research": 28},
+        "论文路线": {"research": 19, "portfolio": 20},
     },
     "gov": {
-        "选调路线": {"exam": 24, "leadership": 20},
-        "国省考路线": {"exam": 30},
+        "选调路线": {"exam": 22, "leadership": 14},
+        "国省考路线": {"exam": 26},
     },
     "kaoyan": {
-        "标准路线": {"exam": 26, "gpa": 20, "english": 20},
-        "专业课路线": {"exam": 32},
+        "标准路线": {"exam": 22, "gpa": 12, "english": 12},
+        "专业课路线": {"exam": 28},
     },
     "baoyan": {
-        "标准路线": {"gpa": 36, "research": 26, "english": 24},
-        "绩点路线": {"gpa": 42, "english": 22},
+        "标准路线": {"gpa": 26, "research": 15, "english": 15},
+        # 绩点路线是"赌一条腿"：绩点要顶到专精上限附近（30/36 = 83%），
+        # 英语只要求及格线。原来写太松，实测所有顺手刷绩点的人
+        # 都能蹭到保研结局，把其它五条赛道挤掉了。
+        "绩点路线": {"gpa": 30, "english": 12},
     },
 }
 
-# 必须持有的 flag（除了属性门槛）
 ENDING_FLAGS: dict[str, tuple[str, ...]] = {
-    "baoyan": ("tuimian_qualified",),   # 拿到推免资格
-    "kaoyan": ("kaoyan_admitted",),     # 考研上岸
-    "job": ("qiuzhao_offer",),          # 拿到秋招 offer
-    "gov": ("party_member",),           # 党员身份
-    "abroad": ("abroad_offer",),        # 拿到海外 offer
-    "research": (),                     # 科研看成果 flag，见下
+    "baoyan": ("tuimian_qualified",),
+    "kaoyan": ("kaoyan_admitted",),
+    "job": ("qiuzhao_offer",),
+    "gov": ("party_member",),
+    "abroad": ("abroad_offer",),
+    "research": (),
 }
 
-# 或者持有这些 flag 之一也能过（"成果说话"的赛道）
 ENDING_ANY_FLAGS: dict[str, tuple[str, ...]] = {
     "research": ("paper_published", "direct_phd_intent"),
 }
 
-# 结局判定优先级（越靠前越先判定；命中多个则并列展示让玩家选）。
-#
-# 顺序有讲究，不是随手排的：
-#   * 保研排第一，因为它要求最多、最不容易蹭到。
-#   * 四条"要真的去争取"的赛道（考研/就业/考公/留学）排在中段 ——
-#     它们的 flag 只能靠大四抉择的成败判定拿到，不会被人顺手蹭到。
-#   * **科研深造排最后**，因为 "research 高 + 论文节点解锁" 这件事
-#     几乎是走学术路线时的副产品，很多不打算读博的人也会满足。
-#     它放最后意味着"科研深造是兜底里最体面的那个"，而不是默认结局。
+# 判定优先级：保研要求最多排第一；四条"要争取"的赛道排中段
+# （flag 只能靠大四抉择的成败判定拿到，蹭不到）；科研深造排最后 ——
+# "research 高 + 论文节点解锁"几乎是走学术路线的副产品。
 ENDING_PRIORITY: tuple[str, ...] = (
     "baoyan",
     "kaoyan",
@@ -548,16 +576,15 @@ ENDING_NAMES: dict[str, str] = {
     "slow": "慢慢来",
 }
 
-# 兜底结局的分支
-ENDING_SLOW_GOOD = "重新出发"      # 心态高
-ENDING_SLOW_HARD = "需要停一停"    # 心态低
-
-SLOW_GOOD_MIND_GATE = 15
+ENDING_SLOW_GOOD = "重新出发"
+ENDING_SLOW_HARD = "需要停一停"
+SLOW_GOOD_MIND_GATE = 12
 
 
 # ---------------------------------------------------------------- 存档
 
-SAVE_SCHEMA_VERSION = 1
+# 2：8 学期 + 移除经济 + 竞赛改成大类
+SAVE_SCHEMA_VERSION = 2
 
 
 # ---------------------------------------------------------------- 显示

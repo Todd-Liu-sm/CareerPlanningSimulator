@@ -385,7 +385,6 @@ class GameState:
     semester: int = 1
     action_points: int = 0
     fatigue: int = 0
-    money: int = 50
     rest_points: int = 0             # 本学期用于休息的行动点
 
     history: list[dict[str, Any]] = field(default_factory=list)
@@ -394,6 +393,9 @@ class GameState:
     pending_hook: str | None = None
     used_hooks: set[str] = field(default_factory=set)
     main_picked: bool = False
+    # 大四收尾抉择选的那条路（赛道 key）。结局判定优先用它 ——
+    # 玩家最后主动选的那条路，比"顺手也满足了保研门槛"更能代表这一局。
+    final_choice: str = ""
     finished: bool = False
     started_on: str = field(default_factory=lambda: date.today().isoformat())
 
@@ -416,7 +418,6 @@ class GameState:
             "semester": self.semester,
             "action_points": self.action_points,
             "fatigue": self.fatigue,
-            "money": self.money,
             "rest_points": self.rest_points,
             "history": list(self.history),
             "seen_events": sorted(self.seen_events),
@@ -424,6 +425,7 @@ class GameState:
             "pending_hook": self.pending_hook,
             "used_hooks": sorted(self.used_hooks),
             "main_picked": self.main_picked,
+            "final_choice": self.final_choice,
             "finished": self.finished,
             "started_on": self.started_on,
         }
@@ -442,7 +444,6 @@ class GameState:
         state.semester = int(data.get("semester", 1))
         state.action_points = int(data.get("action_points", 0))
         state.fatigue = int(data.get("fatigue", 0))
-        state.money = int(data.get("money", 50))
         state.rest_points = int(data.get("rest_points", 0))
         state.history = list(data.get("history") or ())
         state.seen_events = set(data.get("seen_events") or ())
@@ -450,6 +451,7 @@ class GameState:
         state.pending_hook = data.get("pending_hook")
         state.used_hooks = set(data.get("used_hooks") or ())
         state.main_picked = bool(data.get("main_picked", False))
+        state.final_choice = str(data.get("final_choice") or "")
         state.finished = bool(data.get("finished", False))
         state.started_on = str(data.get("started_on") or date.today().isoformat())
         return state

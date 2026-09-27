@@ -41,13 +41,13 @@ def test_empty_delta():
 
 def test_delta_resources_and_hobby():
     delta = EffectDelta(
-        resources_before={"fatigue": 10, "money": 50},
-        resources_after={"fatigue": 14, "money": 45},
+        resources_before={"fatigue": 10},
+        resources_after={"fatigue": 14},
         hobby_key="sport",
         hobby_before=10,
         hobby_after=20,
     )
-    assert delta.resources_delta == {"fatigue": 4, "money": -5}
+    assert delta.resources_delta == {"fatigue": 4}
     assert "疲劳+4" in delta.summary()
     assert "运动健身+10" in delta.summary()
 
@@ -80,7 +80,9 @@ def test_hobby_level_never_exceeds_max():
 
 def test_hobby_level_matches_thresholds():
     player = PlayerState()
-    for xp, expected in ((0, 0), (19, 0), (20, 1), (49, 1), (50, 2), (200, C.HOBBY_MAX_LEVEL)):
+    t = C.HOBBY_LEVEL_THRESHOLDS
+    for xp, expected in ((0, 0), (t[1] - 1, 0), (t[1], 1),
+                         (t[2] - 1, 1), (t[2], 2), (t[-1] + 50, C.HOBBY_MAX_LEVEL)):
         player.hobbies["reading"] = xp
         assert player.hobby_level("reading") == expected, f"xp={xp}"
 
@@ -162,7 +164,6 @@ def test_gamestate_roundtrip():
     state.semester = 7
     state.action_points = 2
     state.fatigue = 33
-    state.money = 61
     state.rest_points = 1
     state.history.append({"semester": 1, "cards": []})
     state.seen_events.add("e_sick")
@@ -177,7 +178,6 @@ def test_gamestate_roundtrip():
     assert clone.semester == 7
     assert clone.action_points == 2
     assert clone.fatigue == 33
-    assert clone.money == 61
     assert clone.rest_points == 1
     assert clone.history == state.history
     assert clone.seen_events == state.seen_events
@@ -216,7 +216,7 @@ def test_gamestate_semester_label():
     state = GameState()
     state.semester = 1
     assert state.semester_label == "大一上"
-    state.semester = 16
+    state.semester = C.TOTAL_SEMESTERS
     assert state.semester_label == "大四下"
 
 

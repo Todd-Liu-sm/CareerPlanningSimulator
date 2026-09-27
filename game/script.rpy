@@ -64,7 +64,7 @@ label start:
 
     center "{size=+8}你叫不上名字的教学楼，第一天就绕了三圈。{/size}\n\n{color=#8A93A3}你是「[_start_line.name]」，[_major.name]。四年之后你会变成什么样，取决于你怎么花掉这 [C.TOTAL_ACTIONS] 个行动点。{/color}"
 
-    # ---------------- 16 个学期
+    # ---------------- 大学四年 = 8 个学期
     while not engine.finished:
 
         $ renpy.block_rollback()
@@ -283,8 +283,11 @@ label selfcheck_finish:
                 continue
             _vis = engine.semester_cards()
             if not _vis:
-                break
-            _r = engine.play([c.id for c in _vis[: engine.ap]])
+                # 没牌可打（理论上不会发生）→ 强制收尾，别让自检卡死
+                engine.finish_semester()
+                continue
+            _n = min(engine.ap, len(_vis))
+            _r = engine.play([c.id for c in _vis[:_n]])
             if not _r.ok:
                 break
         CHK.check_log("selfcheck_report.txt", "跑到结局：%s" % engine.resolve_ending().name)
@@ -347,10 +350,9 @@ label savecheck:
             engine.player.flags.add("cet4")
             engine.player.flags.add("lab_member")
             engine.state.fatigue = 22
-            engine.state.money = 44
             engine.state.semester = 5
             engine.state.action_points = C.ap_for(5)
-            engine.state.history.append({"semester": 5, "label": "大三上", "cards": []})
+            engine.state.history.append({"semester": 5, "label": C.semester_label(5), "cards": []})
 
             # 解锁几个技能树节点，验证 set 类型也能正确存档
             for _n in CM.skilltree.newly_available(engine.player, engine.state):
@@ -362,9 +364,9 @@ label savecheck:
                 sum(engine.player.attrs.values()),
                 len(engine.player.flags),
                 len(engine.player.unlocked)))
-            CHK.check_log("savecheck_report.txt", "对照组 gpa=%d research=%d fatigue=%d money=%d" % (
+            CHK.check_log("savecheck_report.txt", "对照组 gpa=%d research=%d fatigue=%d" % (
                 engine.player.attr("gpa"), engine.player.attr("research"),
-                engine.state.fatigue, engine.state.money))
+                engine.state.fatigue))
 
     $ renpy.pause(0.2)
 
@@ -422,17 +424,16 @@ label savecheck:
             "gpa": engine.player.attr("gpa"),
             "research": engine.player.attr("research"),
             "fatigue": engine.state.fatigue,
-            "money": engine.state.money,
             "flags": len(engine.player.flags),
             "unlocked": len(engine.player.unlocked),
         }
-        CHK.check_log("savecheck_report.txt", "读档后：学期=%s 属性合计=%d gpa=%d research=%d fatigue=%d money=%d flag=%d 节点=%d" % (
+        CHK.check_log("savecheck_report.txt", "读档后：学期=%s 属性合计=%d gpa=%d research=%d fatigue=%d flag=%d 节点=%d" % (
             C.semester_label(_now["semester"]), _now["attrs_total"], _now["gpa"],
-            _now["research"], _now["fatigue"], _now["money"],
+            _now["research"], _now["fatigue"],
             _now["flags"], _now["unlocked"]))
 
         _expect = {"semester": 5, "attrs_total": 138, "gpa": 23, "research": 16,
-                   "fatigue": 22, "money": 44}
+                   "fatigue": 22}
         _bad = {k: (_expect[k], _now[k]) for k in _expect if _now[k] != _expect[k]}
         if _bad:
             CHK.check_log("savecheck_report.txt", "结果：不一致 %r" % (_bad,))
@@ -491,10 +492,10 @@ label loadcheck:
                 sum(engine.player.attrs.values()),
                 len(engine.player.flags),
                 len(engine.player.unlocked)))
-            CHK.check_log("loadcheck_report.txt", "gpa=%d research=%d english=%d fatigue=%d money=%d" % (
+            CHK.check_log("loadcheck_report.txt", "gpa=%d research=%d english=%d fatigue=%d" % (
                 engine.player.attr("gpa"), engine.player.attr("research"),
                 engine.player.attr("english"),
-                engine.state.fatigue, engine.state.money))
+                engine.state.fatigue))
             CHK.check_log("loadcheck_report.txt", "flags=%s" % sorted(engine.player.flags))
         except Exception as exc:
             CHK.check_log("loadcheck_report.txt", "读取引擎状态抛异常：%r" % (exc,))

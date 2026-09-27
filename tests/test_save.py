@@ -23,7 +23,7 @@ from game.core import engine as ENG
 from game.core.state import GameConfig, GameState, PlayerState
 
 
-def _played(seed: int = 4242, semester: int = 5) -> ENG.GameEngine:
+def _played(seed: int = 4242, semester: int = 4) -> ENG.GameEngine:
     """开一局并推进到指定学期，制造一个非平凡的状态。"""
     eng = ENG.create(seed=seed, cfg=GameConfig())
     eng.begin("normal", "cs", "opt_summer_study", "opt_goal_deep")
@@ -56,7 +56,6 @@ def test_engine_serialize_roundtrip_preserves_everything():
     assert clone.state.seed == eng.state.seed
     assert clone.state.action_points == eng.state.action_points
     assert clone.state.fatigue == eng.state.fatigue
-    assert clone.state.money == eng.state.money
     assert clone.state.finished == eng.state.finished
 
     assert clone.player.major == eng.player.major
@@ -159,9 +158,9 @@ def test_finished_game_roundtrip():
 # ---------------------------------------------------------------- 存档要点
 
 
-def test_autosave_slot_names_are_stable():
-    """自动存档槽位名是写死的 auto-1..3，换名字会让老存档读不到。"""
-    assert C.SAVE_SCHEMA_VERSION == 1
+def test_save_schema_version_is_current():
+    """存档格式版本号。改动存档结构时必须 +1，否则老存档会被误读。"""
+    assert C.SAVE_SCHEMA_VERSION == 2
 
 
 def test_deserialize_after_begin_keeps_start_line():

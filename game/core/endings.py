@@ -83,16 +83,28 @@ def evaluate_track(player: PlayerState, track: str) -> EndingCandidate | None:
 
 
 def candidates(player: PlayerState, state: GameState | None = None) -> list[EndingCandidate]:
-    """所有命中的赛道，按 config.ENDING_PRIORITY 排序。"""
+    """所有命中的赛道，按「玩家最后选的路 → config.ENDING_PRIORITY」排序。
+
+    **大四收尾抉择选的那条路排第一**：那是玩家在看完所有结果之后主动做的
+    选择，比"顺手也把保研门槛满足了"更能代表这一局。没有它的话，一个把
+    绩点刷高的人无论最后选什么都只能拿到保研结局，最后一次抉择形同虚设。
+    """
     found: list[EndingCandidate] = []
     for track in C.ENDING_PRIORITY:
         candidate = evaluate_track(player, track)
         if candidate is not None:
             found.append(candidate)
+
+    chosen = getattr(state, "final_choice", "") if state is not None else ""
+    order = {track: index for index, track in enumerate(C.ENDING_PRIORITY)}
     # 同级里"达成得更漂亮"的排前面
     found.sort(key=lambda c: -c.score)
-    order = {track: index for index, track in enumerate(C.ENDING_PRIORITY)}
-    found.sort(key=lambda c: order.get(c.key, 99))
+    found.sort(
+        key=lambda c: (
+            0 if (chosen and c.key == chosen) else 1,
+            order.get(c.key, 99),
+        )
+    )
     return found
 
 

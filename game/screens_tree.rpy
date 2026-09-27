@@ -7,9 +7,14 @@
 # 坐标结论（改数字之前先把这段算一遍）：
 #   6 列 × 200 宽 + 5 × 8 间距 = 1240，左右各留 20。
 #   顶部条 64 / 列头 56（y 70..126）/ 网格 y 132 / 行高 50 / 节点高 44
-#   → 8 行 = 400px，网格底边 132 + 400 = 532。
-#   详情面板 y 540（高 134）→ 底边 674；共享节点 y 682（高 34）→ 底边 716。
-#   全部落在 720 以内，而且**8 个节点一次全显示、不用滚动**。
+#   → 4 行 = 200px，网格底边 132 + 200 = 332。
+#   共享节点条 y 372（高 34）→ 底边 406；
+#   详情面板 y 420（高 134）→ 底边 554。
+#   全部落在 720 以内，而且**每条赛道的节点一次全显示、不用滚动**。
+#
+#   ※ 节点结构改过：从 6 赛道 × 8 阶段 + 8 共享（60 个）收到
+#     6 × 4 阶段（基线/核心/专精/大成）+ 6 共享 = 30 个。行高常量没变，
+#     所以现在网格只占 4 行、下面留白 —— 这是刻意的，不滚动更清楚。
 #
 #   ※ 早期把行高设成 92、只显示 6 行，结果网格伸到 y=682 被详情面板盖住，
 #     第 7-8 行永远看不到。lint 查不出来，只能看截图。改这几个数之前请重算一遍。
@@ -19,8 +24,8 @@ define tree_node_h = 44
 define tree_pad_x = 20
 define tree_header_y = 70
 define tree_grid_y = 132
-define tree_detail_y = 540
-define tree_shared_y = 682
+define tree_detail_y = 420
+define tree_shared_y = 372
 
 
 # ================================================================ 浮层外壳
@@ -66,7 +71,7 @@ screen overlay_shell(title, subtitle):
 
 screen overlay_tree():
 
-    use overlay_shell("技能树", "每条赛道 8 个节点，加 8 个跨赛道共享节点"):
+    use overlay_shell("技能树", "每条赛道 %d 个节点，加 %d 个跨赛道共享节点" % (C.NODES_PER_TRACK, C.SHARED_NODE_COUNT)):
 
         # ---------------- 列头
         python:
@@ -412,7 +417,6 @@ screen overlay_attrs():
                     spacing 6
                     text "状态" style "t_head"
                     use resource_line("疲劳", engine.state.fatigue, c_danger, C.RESOURCE_MAX)
-                    use resource_line("经济", engine.state.money, c_gold, C.RESOURCE_MAX)
                     null height 6
                     text "疲劳 >= [C.FATIGUE_PENALTY_AT] 所有收益打八折；>= [C.FATIGUE_BURNOUT_AT] 会透支。" style "t_tiny" color c_text_faint
 

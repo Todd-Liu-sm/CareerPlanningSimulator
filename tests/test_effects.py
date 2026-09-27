@@ -78,19 +78,22 @@ def test_take_whole_respects_cap():
 
 
 def test_base_gain_by_rarity():
-    """卡片 effects 的值就是点数，品质乘数往上叠。"""
+    """卡片 effects 的值就是点数，品质只带来很小的加成。
+
+    品质乘数刻意压在 1.1 以内：24 个行动点经不起 1.4 倍的复利。
+    """
     card = FakeCard(effects={"gpa": 5})
     state = make_state()
     assert E.attr_gain(card, state.player, 0)["gpa"] == 5
 
     card.rarity = "epic"
-    assert E.attr_gain(card, state.player, 0)["gpa"] == 7
+    assert E.attr_gain(card, state.player, 0)["gpa"] == int(5 * C.RARITY_MULT["epic"])
 
     card.rarity = "rare"
-    assert E.attr_gain(card, state.player, 0)["gpa"] == 6
+    assert E.attr_gain(card, state.player, 0)["gpa"] == int(5 * C.RARITY_MULT["rare"])
 
     card.rarity = "safe"
-    assert E.attr_gain(card, state.player, 0)["gpa"] == 4
+    assert E.attr_gain(card, state.player, 0)["gpa"] == int(5 * C.RARITY_MULT["safe"])
 
 
 def test_weighted_gain():
@@ -186,17 +189,21 @@ def test_add_attrs_clamps_at_zero():
     assert state.player.attrs["mind"] == 0
 
 
-def test_add_attrs_clamps_at_max_and_overflows():
-    """属性满了之后，部分收益要转给相邻属性。"""
+def test_add_attrs_caps_without_overflow():
+    """到顶就是到顶：多出来的点数丢弃，不做溢出转移。
+
+    早期版本会把溢出的点数转给相邻属性，相邻再转给相邻，形成级联，
+    结果半张属性表被糊满（玩家反馈的"作品分溢出太多"的根因）。
+    """
     state = make_state()
     state.player.attrs["gpa"] = C.ATTR_MAX
     notes: list[str] = []
     E.add_attrs(state.player, {"gpa": 5}, state.fatigue, notes)
     assert state.player.attrs["gpa"] == C.ATTR_MAX
-    # 溢出转给 gpa 的邻居
-    neighbors = E.OVERFLOW_NEIGHBORS["gpa"]
-    assert any(state.player.attrs[n] > 0 for n in neighbors)
-    assert notes
+    # 其它属性不能因为溢出而被动增长
+    others = [k for k in C.ATTRS if k != "gpa"]
+    assert all(state.player.attrs[k] == 0 for k in others), "不该有溢出转移"
+    assert any("已满" in n for n in notes)
 
 
 def test_fatigue_penalty_applies_to_gains():
@@ -223,7 +230,7 @@ def test_apply_card_updates_everything():
     card = FakeCard(
         id="a_x",
         effects={"gpa": 2},
-        resources={"fatigue": 3, "money": -4},
+        resources={"fatigue": 3},
         flags=("met_mentor",),
         hobby=("reading", C.HOBBY_XP_PER_ACTION),
         tags=("study",),
@@ -233,7 +240,6 @@ def test_apply_card_updates_everything():
 
     assert state.player.attrs["gpa"] > 0
     assert state.fatigue == 3
-    assert state.money == 50 - 4
     assert "met_mentor" in state.player.flags
     assert state.player.hobby_xp("reading") == C.HOBBY_XP_PER_ACTION
     assert "reading" in state.player.hobbies_invested
@@ -245,15 +251,19 @@ def test_apply_card_updates_everything():
 
 def test_apply_card_tracks_rest_points():
     rest_card = FakeCard(id="a_rest", effects={"mind": 1}, tags=("rest",))
-    sport_card = FakeCard(id="a_sport", effects={"body": 1}, tags=("hobby_sport",))
+    # 爱好卡用的是 "hobby" 这个统一 tag（大类粒度），REST_TAGS 里也认它
+    hobby_card = FakeCard(id="a_hobby", effects={"body": 1}, tags=("hobby", "sport"))
     state = make_state()
     E.apply_card(state, rest_card, times_used=0)
-    E.apply_card(state, sport_card, times_used=0)
+    E.apply_card(state, hobby_card, times_used=0)
     assert state.rest_points == 2
     # 标记了但没在 REST_TAGS 里的不算
     state2 = make_state()
     E.apply_card(state2, FakeCard(id="a_study", tags=("study",)), times_used=0)
     assert state2.rest_points == 0
+    # 每张休息卡只算一次，重复投同一张也不叠加语义
+    E.apply_card(state2, FakeCard(id="a_rest2", tags=("entertain",)), times_used=0)
+    assert state2.rest_points == 1
 
 
 def test_apply_card_records_semester_attr_spend():
@@ -280,20 +290,6 @@ def test_begin_semester_clears_spent():
 # ---------------------------------------------------------------- 溢出邻居表
 
 
-def test_overflow_neighbors_are_legal_and_not_self():
-    for key, neighbors in E.OVERFLOW_NEIGHBORS.items():
-        assert key in C.ATTRS
-        for neighbor in neighbors:
-            assert neighbor in C.ATTRS
-            assert neighbor != key
-
-
-def test_every_attr_has_overflow_path():
-    for key in C.ATTRS:
-        assert E.OVERFLOW_NEIGHBORS.get(key), f"{key} 没有溢出出口"
-
-
-# ---------------------------------------------------------------- 门槛
 
 
 def test_attribute_gate_blocking_and_reasons():
@@ -319,26 +315,64 @@ def test_card_without_gate_always_ok():
 
 
 def test_fatigue_gain_and_relief():
-    """放松的学期疲劳净减；硬扛的学期净增。"""
+    """疲劳按行动点计价：干得越多涨得越狠，休息能把它压回去。
+
+    这是"疯狂卷也要有代价"的唯一实现处，公式错了整个平衡就崩。
+    """
+    # 什么都不干 + 心态好 → 疲劳往下走（自然恢复 + 高心态额外恢复）
     state = make_state()
     state.player.attrs["mind"] = 30
+    state.action_points = C.ap_for(1)  # 一点没花
     relaxed, notes = E.semester_fatigue(state, {})
     assert relaxed < 0, "什么都不干、心态又好，疲劳应该往下走"
     assert any("心态稳住" in note for note in notes)
 
-    # 同一学期完全不休息 → 疲劳净增
+    # 同一学期完全不休息 → 疲劳净增，且涨的正好是"用掉的行动点 × 每点代价"
     state2 = make_state()
     state2.player.attrs["mind"] = 0
-    grinding, _ = E.semester_fatigue(state2, {})
+    state2.action_points = 0  # 3 点全花光
+    grinding, notes2 = E.semester_fatigue(state2, {})
+    assert grinding == C.FATIGUE_PER_ACTION * C.ap_for(1) - C.FATIGUE_NATURAL_RECOVERY
     assert grinding > 0, "不休息就该累积疲劳"
+    assert any("一点没歇" in note for note in notes2)
 
-    # 休息能显著改善
+    # 花 2 点干活 + 1 点休息 → 已经转负（4×2 -10 -2 = -4）
     state3 = make_state()
     state3.player.attrs["mind"] = 0
-    state3.rest_points = 2
-    rested, _ = E.semester_fatigue(state3, {})
-    assert rested < grinding
-    assert rested < 0
+    state3.action_points = C.ap_for(1) - 2
+    state3.rest_points = 1
+    mixed, _ = E.semester_fatigue(state3, {})
+    assert mixed == (
+        C.FATIGUE_PER_ACTION * 2 - C.FATIGUE_REST_RELIEF - C.FATIGUE_NATURAL_RECOVERY
+    )
+    assert mixed < 0, "2 干活 1 休息应该能把疲劳压回去"
+
+    # 再少干一点就更轻松
+    state3b = make_state()
+    state3b.player.attrs["mind"] = 0
+    state3b.action_points = C.ap_for(1) - 1
+    state3b.rest_points = 2
+    rested, _ = E.semester_fatigue(state3b, {})
+    assert rested == (
+        C.FATIGUE_PER_ACTION * 1 - C.FATIGUE_REST_RELIEF * 2 - C.FATIGUE_NATURAL_RECOVERY
+    )
+    assert rested < mixed, "少干一点就轻松一点"
+
+    # 一学期只花 1 点干活、其余全休息 → 掉得最狠
+    state4 = make_state()
+    state4.player.attrs["mind"] = 0
+    state4.action_points = 1
+    state4.rest_points = C.ap_for(1) - 1
+    all_rest, _ = E.semester_fatigue(state4, {})
+    assert all_rest < rested < mixed < grinding, "干得越多越累，单调"
+
+    # 同样的干活量，多休息一点就更轻松
+    more_rest = make_state()
+    more_rest.player.attrs["mind"] = 0
+    more_rest.action_points = 0
+    more_rest.rest_points = C.ap_for(1)
+    value, _ = E.semester_fatigue(more_rest, {})
+    assert value < all_rest
 
 
 def test_overinvestment_is_reported():
@@ -391,10 +425,10 @@ def test_event_option_applies_effects_and_flags():
         hobby: tuple[str, int] | None = None
 
     state = make_state()
-    option = FakeOption(effects={"mind": 1}, resources={"money": 5}, flags=("refused",))
+    option = FakeOption(effects={"mind": 1}, resources={"fatigue": 5}, flags=("refused",))
     delta = E.apply_event_option(state, option)
     assert state.player.attrs["mind"] > 0
-    assert state.money == 55
+    assert state.fatigue == 5
     assert "refused" in state.player.flags
     assert delta.attrs_delta["mind"] > 0
 

@@ -8,34 +8,36 @@
 ## 0. 铁律
 
 1. **纯数据，不导入 renpy。** 只允许 `from . import config as C` 和 `from dataclasses import dataclass, field`。
-2. **数值尺度是 0–25，不是 0–100。** 一局只有 38 个行动点。如果你的效果写成 `+15`，那一张卡就顶掉整局的四成预算 —— 错。
+2. **数值尺度是 0–36，不是 0–100。** 一局只有 24 个行动点，
+   单属性专精的理论上限是 32。如果你把一张卡的效果写成 `+15`，
+   那一张卡就顶掉半条专精线 —— 错。单卡效果总和上限是 **6**。
 3. **中文文案要有信息量。** `"上课"` 不合格；`"把高数作业当成项目来做，每道题都写完整的推导"` 合格。
 4. **id 全局唯一**，命名 `snake_case`，前缀分类：`c_` 竞赛、`a_` 行动、`n_` 节点、`h_` 爱好、`e_` 事件、`s_` 起点、`m_` 专业、`k_` 关键抉择。
-5. 所有时间用**学期序号 1–16**（1=大一上，2=大一下，……，16=大四下）。`config.semester_label(n)` 能翻译成中文。
+5. 所有时间用**学期序号 1–8**（1=大一上，2=大一下，……，8=大四下）。`config.semester_label(n)` 能翻译成中文。
 6. 不要写 `print`、不要读写文件、不要网络。
 
 ---
 
 ## 1. 数值参考（照这个写，别自己发明）
 
-`EFFECT_BASE = 5.0`，品质乘数：`epic 1.4 / rare 1.2 / common 1.0 / safe 0.8`。
+**卡片 `effects` 的值就是属性点**，品质只带来很小的乘数：
+`epic 1.10 / rare 1.05 / common 1.00 / safe 0.90`。
 
-单次行动在某属性上的实际收益 ≈ `5.0 × 品质乘数 × 权重`：
-
-| 品质 | 单属性满额 | 建议写法 |
+| 品质 | 建议写法 | 说明 |
 |---|---|---|
-| `epic` | +7 | 主线大卡，一学期只该出现 1–2 张 |
-| `rare` | +6 | 强卡，一学期 2–4 张 |
-| `common` | +5 | 常规卡，卡池主体 |
-| `safe` | +4 | 保底卡，永远可用、永远不亏 |
+| `epic` | +5 | 主线大卡，整局只该出现几张，通常带 `gate` |
+| `rare` | +4 ~ +5 | 强卡，一学期 2–4 张 |
+| `common` | +2 ~ +4 | 常规卡，卡池主体 |
+| `safe` | +2 ~ +3 | 保底卡，永远可用、永远不亏、不吃门槛 |
 
-**一张卡的总属性点建议 4–8。** 拆成 2–3 个属性，权重用整数（1、2、3…）：
+**一张卡的总属性点上限是 6**（`actions._validate()` 会拦）。拆成 2–3 个属性：
 
 ```python
 effects={"gpa": 3, "mind": 1}          # 好：主属性 +3，附带 +1
 effects={"gpa": 2, "research": 1, "mind": 1}   # 好：三属性铺开
-effects={"gpa": 9}                     # 错：太猛了
+effects={"gpa": 9}                     # 错：超过上限 6，生成器直接报错
 effects={"gpa": 1, "research": 1, "intern": 1, "english": 1, "exam": 1, "network": 1}  # 错：撒胡椒面
+
 ```
 
 **预算约束（会被测试断言）**：任意一张卡 `sum(effects.values()) <= 9`。
@@ -58,7 +60,7 @@ effects={"gpa": 1, "research": 1, "intern": 1, "english": 1, "exam": 1, "network
 
 ```
 属性 (10)：gpa research intern english exam network leadership portfolio body mind
-资源 (2)：fatigue money
+资源 (1)：fatigue
 赛道 (6)：baoyan kaoyan job gov abroad research
 爱好 (8)：sport art music gaming reading screen food volunteer
 品质 (4)：epic rare rare common safe
@@ -117,11 +119,11 @@ class Contest:
 ```
 
 ```python
-CONTEST_LIST: tuple[Contest, ...] = (...)   # 约 70 个
+CONTEST_LIST: tuple[Contest, ...] = (...)   # 恰好 5 个（5 个大类）
 CONTESTS: dict[str, Contest] = {...}
 def get(contest_id: str) -> Contest: ...
-def for_major(major_id: str) -> list[Contest]: ...      # 该专业可见（含 flex 与专属）
-def dedicated(major_id: str) -> list[Contest]: ...      # 仅专属（majors 只含该专业）
+def for_major(major_id: str) -> list[Contest]: ...      # 该专业可见的大类
+def dedicated(major_id: str) -> list[Contest]: ...      # majors 没覆盖全部 8 个专业的大类
 def flex(contest_id: str) -> bool: ...
 def all_ids() -> tuple[str, ...]: ...
 CONTEST_LADDER: dict[str, tuple[str, ...]] = {...}      # 竞赛 id -> 可打阶梯（由 tiers 生成）
@@ -130,22 +132,25 @@ def stage_card_id(contest_id: str, tier: str) -> str: ...
 ```
 
 **硬性要求**
-- 8 个专业每个 **≥6 个可见竞赛**，其中 **≥3 个专属**（`majors` 只含本专业）。
-- 每个竞赛至少 2 阶；国赛/国际赛只给重量级竞赛配（ACM、数学建模、机械创新、结构设计、互联网+、挑战杯这种）。
+- **只有 5 个竞赛大类**，id 形如 `c_research` / `c_engineering` / `c_business` /
+  `c_humanities` / `c_comprehensive`，必须和 `config.CONTEST_CATEGORIES` 的 key 对得上。
+- **不写具体比赛名**。玩家反馈过"不需要具体竞赛，直接写竞赛就行"。
+- 每个大类都要有 4 阶（`school/prov/national/intl`），顺序不能乱。
+- 8 个专业每个 **≥3 个可见大类**，且 `c_comprehensive` 对所有人开放。
 - `strengths` 的 key 必须是合法属性名；权重用正数。
-- 竞赛名必须真实存在（见 plan 里的清单），**不要编造比赛**。
-- 附带一张 `STAGE_CARDS`：为每个竞赛的每一阶生成一个行动卡 id，命名 `a_contest_{contest_id[2:]}_{tier}`。
+- `STAGE_CARDS` 由模块自动生成：每个大类 × 每一阶一个行动卡 id，
+  命名 `a_contest_{contest_id[2:]}_{tier}`（如 `a_contest_engineering_prov`）。
+- **不要给某个大类写只有 1-2 个专业能报的 `majors`** —— 那会让那些专业的池子太窄。
 
-各类专业的参考竞赛（按需取用，不要编）：
+大类的覆盖范围参考（写在 `majors` 里）：
 
-- **cs**：ACM-ICPC/CCPC、蓝桥杯、CCCC 天梯赛、全国大学生电子设计竞赛、全国大学生计算机设计大赛、中国国际大学生创新大赛（互联网+）、挑战杯、全国大学生数学建模竞赛、MCM/ICM
-- **mech**：全国大学生机械创新设计大赛、工程训练综合能力竞赛、"高教杯"先进成图技术与产品信息建模创新大赛、恩智浦智能车竞赛、全国大学生化工设计竞赛、节能减排社会实践与科技竞赛、周培源力学竞赛(flex)、数学建模
-- **civil**：全国大学生结构设计竞赛、全国大学生水利创新设计大赛、全国海洋航行器设计与制作大赛、全国大学生测绘技能竞赛、"广联达杯"BIM 毕业设计创新大赛、华维杯农业水利创新设计大赛、周培源力学竞赛(flex)
-- **sci**：全国大学生数学竞赛、丘成桐大学生数学竞赛、全国大学生物理实验竞赛、全国大学生化学实验创新设计大赛、全国大学生生命科学竞赛、全国大学生统计建模大赛、市场调查与分析大赛(flex)、数学建模(国赛/美赛)
-- **biz**：全国大学生商业策划大赛、全国大学生市场调查与分析大赛、全国大学生金融投资模拟大赛、会计与商业案例大赛、全国大学生物流设计大赛、企业竞争模拟大赛、挑战杯、互联网+
-- **ocean**：全国海洋航行器设计与制作大赛、全国海洋知识竞赛、水产类专业实践能力竞赛、水质检测技能竞赛、全国大学生环境生态科技创新大赛、渔菁英挑战赛、数学建模
-- **med**：全国大学生临床技能竞赛、医学技术技能大赛、中医药技能大赛、护理技能大赛、生物化学实验创新设计大赛、生命科学竞赛、化学实验创新设计大赛(flex)
-- **hum**：全国大学生外语能力大赛、"外研社·国才杯"、全国大学生辩论/演讲大赛、全国高校模拟法庭大赛、法律职业能力大赛、全国大学生广告艺术大赛、师范生教学技能竞赛、挑战杯(flex)
+| 大类 | 覆盖 |
+|---|---|
+| 科研类竞赛 | 全部 8 个专业 |
+| 工程类竞赛 | cs / mech / civil / sci / ocean / med |
+| 商科类竞赛 | biz / hum / cs / sci |
+| 人文类竞赛 | hum / biz / med / ocean |
+| 综合类竞赛 | 全部 8 个专业 |
 
 ---
 
@@ -161,7 +166,7 @@ class ActionCard:
     sem_lo: int                     # 最早可用学期
     sem_hi: int                     # 最晚可用学期
     effects: dict[str, int]         # 属性收益（权重）
-    resources: dict[str, int]       # {"fatigue": +2, "money": -3}，可空
+    resources: dict[str, int]       # {"fatigue": +2}，可空（经济已移除）
     flags: tuple[str, ...]          # 触发的 flag，可空
     hobby: tuple[str, int] | None   # (爱好 id, 经验)，可空
     majors: tuple[str, ...]         # () = 通用卡；否则只有这些专业可见
@@ -190,20 +195,28 @@ def rest_cards() -> list[ActionCard]: ...        # rarity == "safe" 且带 rest/
 **tag 合法值（只能用这些）**
 ```
 study  gpa  exam  english  research  lab  intern  work  project  portfolio
-network  social  leadership  party  body  sport  mind  rest
-hobby_sport hobby_art hobby_music hobby_gaming hobby_reading hobby_screen hobby_food hobby_volunteer
-contest  cert  volunteer  money
+network  social  leadership  party  body  sport  mind  rest  entertain
+hobby  art  music  gaming  reading  screen  food  volunteer
+contest  cert
 ```
 
 **起步线专属 tag（`start_affinity` 用）**：`ace`（竞赛大佬）、`cadre`（干部苗子）、`scholar`（小镇做题家）、`artisan`（文艺特长）、`normal`（标准新生）
 
 **内容要求**
-- 通用卡 127 张，覆盖 16 个学期，**每学期至少 6 张可用通用卡**。
-- 专业专属卡：cs 32 / biz 32 / mech 30 / civil 30 / sci 30 / hum 28 / ocean 26 / med 26。
+- 通用卡 118 张，覆盖 8 个学期，**每学期至少 20 张可用通用卡**。
+  卡池要够深：每个属性的"最好的 8 张卡之和"必须 >= 32，否则所有结局门槛都够不着
+  （详见 DESIGN.md 第 2 节）。`tools/gen_actions.py` 生成，不要手改 `actions.py`。
+- 专业专属卡：cs 4 / biz 5 / mech 3 / civil 3 / sci 3 / hum 4 / ocean 3 / med 4。
+  **竞赛改成大类之后，专业差异只剩专属行动卡这一条通道**，所以每个专业的
+  专属卡数量被测试逐一盯死（`test_per_major_card_counts`）。
 - **每个 (专业, 学期) 组合至少 2 张可用专属卡**（会被测试断言）。
-- 每个学期至少 1 张 `safe` 保底卡（通用池里放就行，建议 6–8 张，覆盖全程）。
-- 大一下（sem 2）和 大二下（sem 4）要各有一张 `a_change_major` 语义的转专业卡（通用，`majors=()`，`is_flex=False`）。
-- 大二上（sem 3）要有一张 `a_pick_contest_main` 竞赛选型卡（通用）。
+- 保底卡（`safe`）至少 4 张，合起来覆盖全部 8 个学期，而且**不能有 `attribute_gate`**
+  ——保底卡的定义就是"实在不知道干什么时永远能选"。
+- 通用卡要均匀覆盖 10 个属性：每个属性的"最好的 8 张卡之和"必须 >= 32。
+  只堆少数几个属性会让另外几个属性的门槛永远过不了。
+- 爱好卡统一走 `hobby` tag（不再用 `hobby_sport` 这种细分 tag）+ 一个具体类别 tag
+  （`sport`/`art`/`music`/`gaming`/`reading`/`screen`/`food`/`volunteer`），
+  并且带 `entertain` 或 `hobby` 才算休息。"少投一张"不等于休息。
 - 竞赛卡由 `contests.STAGE_CARDS` 生成，命名 `a_contest_{name}_{tier}`，`effects={}`、`resources={}`、`contest_id`/`contest_tier` 填好、`tags` 含 `contest`，`rarity` 按阶梯给（school=common, prov=rare, national=epic, intl=epic）。
 - 文案要像真人写的，有细节。例：`"在实验室待了整个暑假，给师兄的数据集做了三轮清洗，学会了怎么用一句话说清自己在做什么。"`
 
@@ -216,13 +229,13 @@ contest  cert  volunteer  money
 class SkillNode:
     id: str
     track: str                      # 6 赛道之一；shared 节点用 ""
-    stage: str                      # baseline core expert master capstone
+    stage: str                      # baseline core expert capstone
     name: str                       # ≤6 个汉字
     desc: str                       # 1 句说明达成条件与意义
     requires: tuple[str, ...]       # 前置节点 id
-    gates: dict[str, int]           # 属性门槛（值 5–20）
+    gates: dict[str, int]           # 属性门槛（值 3–24，必须低于对应的结局门槛）
     flags_required: tuple[str, ...] # 必须持有的 flag
-    after_semester: int             # 时间门（1 表示随时）
+    after_semester: int             # 时间门（1 表示随时；必须 < TOTAL_SEMESTERS=8）
     grants: dict[str, int]          # 解锁即给的属性点（通常 1 个属性 +2 或 +3）
     grants_flags: tuple[str, ...]   # 解锁即持有的 flag
     effect_attrs: tuple[str, ...]   # 解锁后这些属性的收益 +NODE_EFFECT_MULT
@@ -233,7 +246,7 @@ class SkillNode:
 ```
 
 ```python
-NODE_LIST: tuple[SkillNode, ...] = ()      # 恰好 60 个
+NODE_LIST: tuple[SkillNode, ...] = ()      # 恰好 30 个（6 赛道 × 4 + 6 共享）
 NODES: dict[str, SkillNode] = {}
 def get(node_id: str) -> SkillNode: ...
 def for_track(track: str) -> list[SkillNode]: ...
@@ -249,10 +262,22 @@ def progress_percent(player) -> dict[str, float]: ...
 ```
 
 **组成（严格按这个数量）**
-- 6 条赛道各 **8 个**节点 = 48（`shared=False`, `track` 填对应赛道）
-- 共享节点 **8 个** = 8
-- 专业专属节点 **4 个**，每个 `majors` 指向 2 个大专业类（cs+sci、mech+civil、ocean+med、biz+hum）
-- 合计 **60**
+- 6 条赛道各 **4 个**节点 = 24（`shared=False`, `track` 填对应赛道），
+  四个阶段依次是 `baseline` → `core` → `expert` → `capstone`，每个阶段恰好 1 个。
+- 共享节点 **6 个**（`shared=True`, `track=""`, `majors=()`）。
+- 合计 **30**。上一版是 60 个，对 24 个行动点来说太密（一次行动能连解好几个）。
+
+**两条硬约束（都真的踩过坑）**
+1. `after_semester` 必须 **< 8**。技能树是在学期末结算的，而最后一学期一开始就被
+   结局抉择截断了，所以 `after_semester == 8` 的节点永远解不开。
+   `skilltree._validate()` 会直接报错。
+2. 节点门槛必须 **低于** 对应的 `ENDING_GATES`。节点给的是"有没有资格"，
+   结局门槛是"真的上岸了吗"。写反了会让整条赛道打不出来。
+   参考：`n_baoyan_tuimian` 现在要求 16/8/10，而 baoyan 的结局门槛是 26/15/15。
+
+**哪些节点该给结局 flag**：只有 `tuimian_qualified`（推免资格）该由节点直接给。
+其它结局 flag（`kaoyan_admitted` / `qiuzhao_offer` / `abroad_offer`）必须留给
+大四收尾抉择的成败判定，否则会绕过整个收尾环节。
 
 `player` 是 `core.state.PlayerState`：用 `player.attrs`、`player.traits`、`player.flags`、`player.unlocked`。
 
@@ -282,10 +307,10 @@ student_cadre       学生干部
 ```python
 @dataclass(frozen=True)
 class HobbyLevel:
-    level: int                  # 0-5
+    level: int                  # 0-4（+ 可选的"满级之后"称号位）
     title: str                  # 该等级的称号，如"入门者"
     desc: str                   # 一句话
-    grants: dict[str, int]      # 达到该等级时给的属性点（累计式，见下）
+    grants: dict[str, int]      # 达到该等级时给的属性点（增量式，见下）
     grants_flags: tuple[str, ...]
     event_hint: str             # 到这个等级会发生什么，可空
 
@@ -295,7 +320,7 @@ class Hobby:
     name: str
     emoji: str                  # 单字符图形提示
     desc: str
-    levels: tuple[HobbyLevel, ...]   # 恰好 6 个，level 0..5
+    levels: tuple[HobbyLevel, ...]   # **至少** 5 个（level 0..4）
     tags: tuple[str, ...]
 ```
 
@@ -310,9 +335,15 @@ def next_threshold(hobby_id: str, xp: int) -> int | None: ...
 def progress_percent(hobby_id: str, xp: int) -> float: ...
 ```
 
-**等级门槛**：`config.HOBBY_LEVEL_THRESHOLDS = (0, 20, 50, 90, 140)`，即 L1=20 / L2=50 / L3=90 / L4=140 经验。每次投入 `+HOBBY_XP_PER_ACTION (10)` 经验，所以 L1 要投 2 次、L4 要投 14 次 —— 这是刻意的长线。
+**等级门槛**：`config.HOBBY_LEVEL_THRESHOLDS = (0, 15, 45, 75, 120)`，
+即 L1=15 / L2=45 / L3=75 / L4=120 经验。每次投入 `+HOBBY_XP_PER_ACTION (15)` 经验，
+所以 L1 投 1 次、L2 投 3 次、L3 投 5 次、**L4 投 8 次**。
+24 个行动点里投 8 次练满一个爱好已经很奢侈 —— 这是刻意的长线。
 
-**`grants` 是"达到该等级时那一次给的点"**（增量式，不是累计）。`level_grants()` 负责把 0..level 的增量加起来。每个爱好 5 个等级各给 2–3 点，总量控制在 **+12 以内**。
+`levels` 可以多写（留出"满级之后"的称号位），但**不能少于 5 个**，
+否则 `level_of` 会返回一个在表里找不到称号的等级。
+
+**`grants` 是"达到该等级时那一次给的点"**（增量式，不是累计）。`level_grants()` 负责把 0..level 的增量加起来。每个爱好 5 个等级各给 2–3 点，总量控制在 **+14 以内**。
 
 8 个爱好 id：`sport art music gaming reading screen food volunteer`。
 
@@ -326,7 +357,7 @@ class EventOption:
     text: str                               # 按钮文字，≤14 字
     outcome: str                            # 选完后的一句话结果
     effects: dict[str, int]                 # 属性
-    resources: dict[str, int]               # 疲劳/经济
+    resources: dict[str, int]               # 只有疲劳
     flags: tuple[str, ...]
     hobby: tuple[str, int] | None
 
@@ -389,7 +420,7 @@ class PrologueChoice:
 @dataclass(frozen=True)
 class Hook:
     id: str
-    semester: int                   # 触发的学期
+    semester: int                   # "进入第 N 学期时抛出"（引擎在 N-1 学期末抽它）
     title: str
     text: str
     options: tuple[HookOption, ...]
@@ -410,11 +441,19 @@ START_LIST: tuple[StartLine, ...] = ()   # 恰好 5 个，id: ace cadrescholar a
 STARTS: dict[str, StartLine] = {}
 def get(start_id: str) -> StartLine: ...
 PROLOGUE: tuple[PrologueChoice, ...] = ()   # 恰好 2 个问题，每个 3 个选项
-HOOKS: dict[str, Hook] = {}                  # 恰好 4 个，semester 分别 6/9/12/13
+HOOKS: dict[str, Hook] = {}                  # 恰好 4 个，semester 分别 5/6/7/8
+FINAL_HOOK_ID = "k_sem8_result"              # 答完它就代表这一局结束
 def hooks_for_semester(sem: int) -> list[Hook]: ...
 ```
 
 **5 条起步线**：`ace` 竞赛大佬 / `cadre` 干部苗子 / `scholar` 小镇做题家 / `artisan` 文艺特长 / `normal` 标准新生。
+
+**4 个关键抉择**：学期号必须是 **5 / 6 / 7 / 8**（互不重复，且不能是第 1 学期）。
+第 8 学期那个的 id 必须等于 `FINAL_HOOK_ID`，它的选项里前四个带 `resolve`
+（`kaoyan` / `job` / `gov` / `abroad`），引擎会按属性算一次成败判定并授予结局 flag。
+`_validate()` 会检查"最后一个学期有且只有这一个抉择"。
+
+`resources` 里**只能出现 `fatigue`**（经济已移除）。
 
 ---
 
@@ -422,7 +461,7 @@ def hooks_for_semester(sem: int) -> list[Hook]: ...
 
 ```python
 def evaluate(state) -> EndingResult: ...
-def candidates(player) -> list[EndingCandidate]: ...
+def candidates(player, state=None) -> list[EndingCandidate]: ...
 def ending_tags(state) -> list[str]: ...
 def radar(player) -> dict[str, int]: ...
 def contest_line(player) -> list[str]: ...
@@ -430,7 +469,12 @@ def highlights(state) -> list[str]: ...
 ```
 
 用 `config.ENDING_GATES` / `ENDING_ALTS` / `ENDING_FLAGS` / `ENDING_ANY_FLAGS` / `ENDING_PRIORITY`。
-`evaluate` 必须返回**所有**命中的候选（`candidates`），主结局取优先级最高的那个；一个都不命中就返回 `slow` 结局，并按 `config.SLOW_GOOD_MIND_GATE` 分成「重新出发」/「需要停一停」。
+`evaluate` 必须返回**所有**命中的候选（`candidates`），主结局取排序后的第一个；
+一个都不命中就返回 `slow` 结局，并按 `config.SLOW_GOOD_MIND_GATE` 分成「重新出发」/「需要停一停」。
+
+**排序规则（顺序不能改）**：先按 `state.final_choice`（玩家在大四收尾抉择里选的那条路）
+降权，再按 `ENDING_PRIORITY`。没有第一条的话，一个顺手把绩点刷高的人无论最后选什么都
+只能拿到保研结局 —— 最后一次抉择就白选了。
 标签从属性与 flag 里推（如「论文选手」「身体是本钱」「早起鸟」「社团扛把子」「临门一脚」），**3–5 个**。
 `highlights` 从 `state.history` 里挑 5 条最关键的记录。
 
@@ -441,9 +485,22 @@ def highlights(state) -> list[str]: ...
 - [ ] 文件能 `python -c "from game.core import actions"` 成功导入
 - [ ] 所有 id 唯一
 - [ ] 所有属性/资源/赛道/爱好 key 合法
-- [ ] 任意卡 `sum(effects.values()) <= 9`
-- [ ] 任意 `attribute_gate` 的值在 5–20
+- [ ] 任意卡 `sum(effects.values()) <= 6`
+- [ ] 任意 `attribute_gate` 的值在 4–16
 - [ ] `requires` / `skills` 里引用的节点 id 真的存在于 `NODE_LIST`
 - [ ] 每个 (专业, 学期) ≥2 张专属卡
 - [ ] 没有 TODO / 占位符 / 空字符串文案
 - [ ] 中文文案长度合理（卡名 ≤8 字，描述 ≤60 字）
+- [ ] 每个属性的"最好的 8 张卡之和" >= 32（否则有赛道永远过不了门槛）
+- [ ] 节点 `after_semester` 全部 < 8，且节点门槛低于对应的结局门槛
+- [ ] 结局 flag 里只有 `tuimian_qualified` 由节点授予，其余留给大四收尾抉择
+
+最后一件事：跑一遍
+
+```powershell
+powershell -File tools/pytest.ps1
+python tools/simulate.py --games 3000 --by-major
+```
+
+**验收指标达标不等于玩法成立** —— 一定要确认"专注某条赛道的策略能真的打出那条结局"。
+这一版之前就是因为只看了分布区间，漏掉了"一条结局门槛都够不着"这个致命问题。
