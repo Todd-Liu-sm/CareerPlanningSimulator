@@ -28,8 +28,16 @@ screen splash_screen():
         xalign 0.5
         yalign 0.86
         spacing 10
-        textbutton "开始" style "primary_button" xalign 0.5 action Return("start")
-        text "本作的内核是纯数据驱动的：340 张手写行动卡、210 个竞赛阶梯、21 个随机事件。" style "t_tiny" color c_text_faint xalign 0.5
+        textbutton "开始新游戏" style "primary_button" xalign 0.5 action Return("start")
+        # 继续游戏：只有存在存档时才出现。存档在本作里是刚需（一局 20+ 分钟），
+        # 之前没有任何存档入口，玩家一关游戏进度就没了。
+        if any_save_exists():
+            textbutton "继续游戏" style "ghost_button" xalign 0.5 action Function(continue_game)
+            text "[newest_save_summary()]" style "t_tiny" color c_text_faint xalign 0.5
+        else:
+            text "还没有存档。开始新游戏后，每进入一个新学期都会自动存一次。" style "t_tiny" color c_text_faint xalign 0.5
+        textbutton "存档 / 读档" style "ghost_button" xalign 0.5 action [SetVariable("save_mode", "load"), Show("save_load_screen", mode="load")]
+        text "本作的内核是纯数据驱动的：344 张手写行动卡、210 个竞赛阶梯、21 个随机事件。" style "t_tiny" color c_text_faint xalign 0.5
 
 
 # ================================================================ 选起步线

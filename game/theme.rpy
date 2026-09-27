@@ -133,6 +133,20 @@ style ghost_button_text is button_text:
     hover_color c_accent
     insensitive_color c_text_faint
 
+# 小号按钮：存档槽位里的「删除」用。
+# 所有 style 语句都要放在 theme.rpy —— 这里颜色和字号都已经 define 过了；
+# 放到别的文件里会因为 style 求值早于 define 而 NameError。
+style ghost_button_small is button:
+    padding (8, 3)
+    background Solid(c_panel_lo)
+    hover_background Solid(c_danger)
+
+style ghost_button_small_text is button_text:
+    font ui_font
+    size sz_tiny
+    color c_text_dim
+    hover_color "#FFFFFF"
+
 
 init python:
 

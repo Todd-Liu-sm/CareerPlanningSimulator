@@ -24,9 +24,30 @@ define config.default_language = None
 
 # ---------------------------------------------------------------- 开发
 #
-# 正式发布时把 developer 改成 False。
-define config.developer = True
-define config.console = True
+# **发布版必须是 False。**
+# developer=True 会打开 Ren'Py 的开发者看门狗（execution.check_infinite_loop
+# 在 100 条语句内没让出控制权就抛 "Possible infinite loop"），读档路径正好会
+# 连续跑很多语句 —— 结果就是玩家一读档就崩。
+# 自检流程用环境变量 DSH_* 控制，不依赖这个开关。
+define config.developer = False
+define config.console = False
+
+# ---------------------------------------------------------------- 回滚与存档
+#
+# 回滚**必须开着**：Ren'Py 的存档靠 rollback log 记录执行位置，关掉回滚会让
+# 读档无法恢复到正确的语句（表现为读档静默失败）。所以这里保持默认开启，
+# 只用 config.rollback_length 限制它不要吃太多内存。
+#
+# 代价是玩家可以回退几步 —— 对一个以"选择"为核心的游戏来说这不算坏事。
+define config.rollback_enabled = True
+define config.hard_rollback_limit = 20
+define config.rollback_length = 40
+
+# 自动存档。默认是 0（关闭），必须显式打开；每进入一个新学期存一次。
+define config.autosave_on_choice = True
+define config.autosave_slots = 3
+
+# 玩家在游戏里能看到"存档 / 读档"按钮（见 screens_save.rpy）。
 
 # ---------------------------------------------------------------- 打包
 #

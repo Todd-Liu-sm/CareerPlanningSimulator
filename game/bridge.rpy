@@ -12,6 +12,11 @@ init -100 python:
 
     CM = renpy_shim.boot()
 
+    # 自检辅助（写报告、截图）。刻意挂在模块上访问，而不是在 label 里 import ——
+    # 在 label 作用域 import 的模块会进 store，而 store 会被整个 pickle 进存档；
+    # 模块对象不可 pickle，结果是存档静默失败。见 renpy_shim.check_log 的说明。
+    CHK = renpy_shim
+
     # 让 .rpy 里能直接用这些名字
     C = CM.config
     GameConfig = CM.state.GameConfig

@@ -8,11 +8,29 @@
 
 label start:
 
-    # 自检模式：设了环境变量 DSH_SELFCHECK=1 就直接走自动化流程，
-    # 把每个界面截图到 tests/screenshots/ 然后退出。
-    # 这样不需要人点，也不需要依赖 Ren'Py 的 test 框架（那个在 headless 下会卡住）。
+    # 自检模式：设了环境变量就直接走自动化流程，不进入正常玩法。
     python:
-        _selfcheck = bool(os.environ.get("DSH_SELFCHECK"))
+        _selfcheck = CHK.env_flag("DSH_SELFCHECK")
+        _savecheck = CHK.env_flag("DSH_SAVECHECK")
+        _loadcheck_slot = CHK.env_value("DSH_LOADCHECK")
+
+    if _loadcheck_slot:
+        # 读档模式。
+        #
+        # ⚠ 关键：调用 renpy.load() 之前**必须先清掉触发读档的环境变量**。
+        #   renpy.load() 会把执行栈换成存档里记录的那一个（本例就是 label start
+        #   的开头），也就是说它"回到过去"而不是"往下走"。环境变量没清的话，
+        #   恢复后的 start 又看到 DSH_LOADCHECK，于是再 load 一次 —— 无限重载，
+        #   最后被 Ren'Py 判成 "Possible infinite loop" 崩掉（踩过这个坑）。
+        #
+        #   清掉之后，恢复回来的这一轮 _loadcheck_slot 是空的，就会继续往下走，
+        #   进入 loadcheck 校验状态。
+        $ CHK.clear_env("DSH_LOADCHECK")
+        $ renpy.load(_loadcheck_slot)
+        jump loadcheck
+
+    if _savecheck:
+        jump savecheck
 
     if _selfcheck:
         jump selfcheck
@@ -23,7 +41,6 @@ label start:
     with dissolve
 
     call screen splash_screen
-
     # ---------------- 选起步线
     call screen pick_start_screen
     $ _start_id = _return
@@ -51,6 +68,10 @@ label start:
     while not engine.finished:
 
         $ renpy.block_rollback()
+
+        # 每进入一个新学期先自动存一次。玩家可能随时关掉游戏，
+        # 不能指望他想起来手动存档。
+        $ autosave_now()
 
         # 每学期开头可能是事件，也可能是关键抉择
         python:
@@ -124,73 +145,32 @@ screen game_menu_extra():
 
 label selfcheck:
 
-    python:
-        import os as _os
+    # 注意：这里**不 import 任何模块**。label 作用域 import 的模块会进 store，
+    # 而 store 会被整个 pickle 进存档 —— 模块对象不可 pickle，存档就废了。
+    # 日志与截图都走 CHK 里的模块级函数。
+    #
+    # 也不能用 print：独立运行时 stdout 是无效句柄，flush 时会抛 OSError。
+    $ CHK.check_reset("selfcheck_report.txt")
+    $ CHK.check_log("selfcheck_report.txt", "selfcheck 开始")
 
-        # 注意：**不能用 print**。Ren'Py 独立运行时 stdout 是个无效句柄，
-        # print 会在 flush 时抛 OSError [Errno 22]，把整个自检带崩（踩过）。
-        # 所以日志一律写文件。
-        _shot_dir = _os.path.join(config.basedir, "tests", "screenshots")
-        if not _os.path.isdir(_shot_dir):
-            _os.makedirs(_shot_dir)
-        _report_path = _os.path.join(_shot_dir, "selfcheck_report.txt")
-        _report = _os.open(
-            _report_path,
-            _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC | getattr(_os, "O_BINARY", 0),
-        )
-
-        _count = [0]
-
-        def _log(message):
-            _os.write(_report, ("%s\n" % message).encode("utf-8"))
-            _os.fsync(_report)
-
-        def _shot(name):
-            """渲染几帧后截图。
-
-            为什么只要 pause + screenshot 就够：`renpy.pause(t)` 会把这一帧画完
-            再返回，所以截到的一定是画完的界面。
-
-            为什么不去临时隐藏 modal 屏幕：试过在截图时遍历 scene_lists 把浮层
-            摘掉再挂回去，但 `get_showing_tags` 返回的 name 字段是字符串（不是带
-            `.tag` 的对象），而且 prologue_screen 这种带必填参数的屏幕被盲 show
-            回来时会直接抛 "missing a required argument"。
-            结论：**别动场景，直接拍**。自检要的是"界面能不能画出来"，
-            不是"能不能绕过 modal"。
-            """
-            path = _os.path.join(_shot_dir, name + ".png")
-            try:
-                renpy.pause(0.4)
-                renpy.screenshot(path)
-                if _os.path.exists(path):
-                    _count[0] += 1
-                    _log("%-28s ok" % (name + ".png"))
-                else:
-                    _log("%-28s MISSING" % (name + ".png"))
-            except Exception as exc:
-                _log("%-28s FAILED %r" % (name + ".png", exc))
-
-        _log("selfcheck 开始，截图目录 %s" % _shot_dir)
-
-        # 用固定种子，保证截图内容可复现
-        new_game(seed=20260101)
+    $ new_game(seed=20260101)
 
     # ---------------- 开场三屏
-    $ _shot("01_splash")
+    $ CHK.shot_logged("01_splash")
     show screen splash_screen
-    $ _shot("02_splash_screen")
+    $ CHK.shot_logged("02_splash_screen")
     hide screen splash_screen
 
     show screen pick_start_screen
-    $ _shot("03_pick_start")
+    $ CHK.shot_logged("03_pick_start")
     hide screen pick_start_screen
 
     show screen pick_major_screen
-    $ _shot("04_pick_major")
+    $ CHK.shot_logged("04_pick_major")
     hide screen pick_major_screen
 
     show screen prologue_screen(CM.starts.PROLOGUE[0])
-    $ _shot("05_prologue")
+    $ CHK.shot_logged("05_prologue")
     hide screen prologue_screen
 
     # ---------------- 正式开局（用真实流程，保证数据也是真的）
@@ -200,11 +180,11 @@ label selfcheck:
     # 不要反复 show/hide 同一个屏幕 —— 实测会在自检里把 pause 卡死（无报错、无截图、进程不退）。
     show screen game_screen
 
-    $ _shot("06_game_screen")
+    $ CHK.shot_logged("06_game_screen")
 
     # ---------------- 四个浮层（切换 active_overlay 即可）
     $ active_overlay = "tree"
-    $ _shot("07_skill_tree_locked")
+    $ CHK.shot_logged("07_skill_tree_locked")
 
     # 造一个"有进度"的状态再拍一次技能树，验证已解锁态的画法
     python:
@@ -218,20 +198,34 @@ label selfcheck:
 
     $ active_overlay = ""
     $ selected_node = ""
-    $ _shot("08_game_screen_progress")
+    $ CHK.shot_logged("08_game_screen_progress")
 
     $ active_overlay = "tree"
     $ selected_node = CM.skilltree.NODE_LIST[0].id
-    $ _shot("09_skill_tree_unlocked")
+    $ CHK.shot_logged("09_skill_tree_unlocked")
 
     $ active_overlay = "contests"
-    $ _shot("10_contests")
+    $ CHK.shot_logged("10_contests")
 
     $ active_overlay = "hobbies"
-    $ _shot("11_hobbies")
+    $ CHK.shot_logged("11_hobbies")
 
     $ active_overlay = "attrs"
-    $ _shot("12_attrs")
+    $ CHK.shot_logged("12_attrs")
+
+    # ---------------- 存档界面（玩家实际会看到的那个）
+    # 这一屏必须验证：没有它玩家根本找不到存档入口。
+    #
+    # 注意：这一段只在 DSH_SAVECHECK_SLOTSHOT=1 时跑。
+    # 原因：save_load_screen 会把每个槽位的缩略图整张解码出来显示，在
+    # 自检这种"一帧连拍十几张"的流程里会拖到卡住。所以单独一个小自检跑它。
+    if CHK.env_flag("DSH_SAVECHECK_SLOTSHOT"):
+        $ save_mode = "save"
+        $ active_overlay = ""
+        show screen save_load_screen(mode="save")
+        $ CHK.shot_logged("13_save_screen")
+        hide screen save_load_screen
+        $ CHK.check_log("selfcheck_report.txt", "存档界面已渲染")
 
     # 只拍结局的模式：跳过结算浮层，直接把一局快进到底。
     #
@@ -240,7 +234,7 @@ label selfcheck:
     # 进程不退）。与其去猜 Ren'Py 内部的渲染时机，不如让"拍结局"这件事
     # 从一开始就不需要主界面存在。
     python:
-        _only_ending = bool(_os.environ.get("DSH_SELFCHECK_ENDING"))
+        _only_ending = CHK.env_flag("DSH_SELFCHECK_ENDING")
 
     if _only_ending:
         jump selfcheck_finish
@@ -259,14 +253,14 @@ label selfcheck:
         _picks = [c.id for c in _avail[: max(1, engine.state.action_points)]]
         _res = engine.play(_picks)
         if not _res.ok:
-            _log("sum 结算被拒绝：%s" % _res.rejected)
+            CHK.check_log("selfcheck_report.txt", "sum 结算被拒绝：%s" % _res.rejected)
         elif not _res.played:
-            _log("sum 结算没有产生任何结果（play 返回空）")
+            CHK.check_log("selfcheck_report.txt", "sum 结算没有产生任何结果（play 返回空）")
         else:
-            _log("sum 结算了 %d 张卡" % len(_res.played))
+            CHK.check_log("selfcheck_report.txt", "sum 结算了 %d 张卡" % len(_res.played))
 
     show screen semester_summary(_res)
-    $ _shot("13_semester_summary")
+    $ CHK.shot_logged("13_semester_summary")
     hide screen semester_summary
 
     jump selfcheck_finish
@@ -293,14 +287,234 @@ label selfcheck_finish:
             _r = engine.play([c.id for c in _vis[: engine.ap]])
             if not _r.ok:
                 break
-        _log("跑到结局：%s" % engine.resolve_ending().name)
+        CHK.check_log("selfcheck_report.txt", "跑到结局：%s" % engine.resolve_ending().name)
 
     # game_screen 在这个 label 里从没被 show 过，所以不需要 hide。
     show screen ending_screen
-    $ _shot("14_ending")
+    $ CHK.shot_logged("14_ending")
     hide screen ending_screen
 
-    $ _log("自检完成，共 %d 张截图" % _count[0])
+    $ CHK.check_log("selfcheck_report.txt", "selfcheck 结束")
+
+    $ renpy.quit()
+
+    return
+
+
+# ================================================================ 存档自检
+#
+# 设 DSH_SAVECHECK=1 走这里：开一局 → 造点进度 → 自动存档 + 手动存档 → 退出。
+# 下一次进程用 DSH_LOADCHECK=1 读回来验证。
+#
+# 注意：这里**故意不在同一帧里空推进几十次**。Ren'Py 的无限循环检测
+# （execution.check_infinite_loop）在 100 条语句内没让出控制权时就会抛
+# "Possible infinite loop"。真实的游戏循环靠 call screen 提供交互，不会触发。
+
+label savecheck:
+
+    $ CHK.check_reset("savecheck_report.txt")
+    $ CHK.check_log("savecheck_report.txt", "savecheck 开始")
+
+    # 这一对标志区分"第一次跑（造数据并存档）"和"读档回来（校验）"。
+    #
+    # 为什么要区分：读档之后，存档里记录的 store 会**恢复 do_savecheck=True /
+    # do_loadcheck=False**，于是下面这段造数据的代码不会重跑，控制流直接落到
+    # 后面的校验段 —— 那正是我们要的（否则会把读回来的状态又覆盖掉）。
+    $ do_savecheck = False
+    $ do_loadcheck = False
+
+    # 造一个"不是初始状态"的局面。只在第一次运行时执行。
+    #
+    # ※※ 千万别在这里 `import time` / `import os` 然后直接用！※※
+    #   在 label 的 python 块里 import 出来的模块会进 Ren'Py 的 store，
+    #   而 store 是**整个被 pickle** 进存档的 —— 模块对象不可 pickle，于是：
+    #     "Could not pickle <module 'time' (built-in)>."
+    #   最阴的是游戏照常跑、只是存不上档，非常难查。要什么就在模块里包好。
+    #   让出控制权请用 renpy.pause()。
+    if not do_savecheck:
+
+        $ new_game(seed=20260101)
+        $ begin_game("normal", "cs", "opt_summer_study", "opt_goal_deep")
+
+        $ renpy.pause(0.2)
+
+        python:
+            _forged = {"gpa": 21, "research": 14, "english": 12, "intern": 9,
+                       "portfolio": 11, "exam": 8, "network": 7,
+                       "leadership": 6, "body": 13, "mind": 15}
+            for _k, _v in _forged.items():
+                engine.player.attrs[_k] = _v
+            engine.player.flags.add("cet4")
+            engine.player.flags.add("lab_member")
+            engine.state.fatigue = 22
+            engine.state.money = 44
+            engine.state.semester = 5
+            engine.state.action_points = C.ap_for(5)
+            engine.state.history.append({"semester": 5, "label": "大三上", "cards": []})
+
+            # 解锁几个技能树节点，验证 set 类型也能正确存档
+            for _n in CM.skilltree.newly_available(engine.player, engine.state):
+                CM.skilltree.apply_node(engine.player, _n)
+
+        python:
+            CHK.check_log("savecheck_report.txt", "构造完成：学期=%s 属性合计=%d flag数=%d 节点数=%d" % (
+                C.semester_label(engine.state.semester),
+                sum(engine.player.attrs.values()),
+                len(engine.player.flags),
+                len(engine.player.unlocked)))
+            CHK.check_log("savecheck_report.txt", "对照组 gpa=%d research=%d fatigue=%d money=%d" % (
+                engine.player.attr("gpa"), engine.player.attr("research"),
+                engine.state.fatigue, engine.state.money))
+
+    $ renpy.pause(0.2)
+
+    # 自动存档（游戏每个学期开头做的就是这件事）
+    python:
+        try:
+            autosave_now()
+            CHK.check_log("savecheck_report.txt", "autosave_now 完成，auto-1 可读：%s" % bool(slot_info("auto-1")))
+        except Exception as exc:
+            CHK.check_log("savecheck_report.txt", "autosave_now 抛异常：%r" % (exc,))
+
+    $ renpy.pause(0.2)
+
+    # 手动存档 —— 这一步会暴露 "store 里有不可 pickle 的东西" 这类问题
+    python:
+        try:
+            do_save("1-1")
+            CHK.check_log("savecheck_report.txt", "do_save(1-1)：toast=%r  can_load=%s" % (store.toast, renpy.can_load("1-1")))
+        except Exception as exc:
+            CHK.check_log("savecheck_report.txt", "do_save 抛异常：%r" % (exc,))
+
+    $ renpy.pause(0.3)
+
+    # 存档界面的数据源是否正常
+    python:
+        _info = slot_info("1-1")
+        if _info is None:
+            CHK.check_log("savecheck_report.txt", "slot_info 返回 None —— 读档界面会把它显示成空槽")
+        else:
+            CHK.check_log("savecheck_report.txt", "slot_info：学期=%r 专业=%r 起步=%r 时间=%r 有缩略图=%s" % (
+                _info.get("semester"), _info.get("major"), _info.get("start"),
+                _info.get("time"), bool(_info.get("shot"))))
+        CHK.check_log("savecheck_report.txt", "any_save_exists()=%s  newest=%r" % (any_save_exists(), newest_save()))
+        CHK.check_log("savecheck_report.txt", "newest_save_summary()=%r" % newest_save_summary())
+
+    # ---------------- 第二阶段：读档回来后校验
+    #
+    # 这里就是整个存档验证的关键。流程是：
+    #   第一次跑（DSH_SAVECHECK=1）→ 走到下面 do_loadcheck 存盘、然后 quit
+    #   第二次跑（设 DSH_LOADCHECK=1-1）→ label start 里 renpy.load()
+    #   存档记录的执行位置正好是**本 label 的 do_savecheck 那一步**，
+    #   所以恢复后控制流会从这里继续：engine 已经是读回来的状态，
+    #   下面这段直接把恢复出来的数字和存进去的对照组比一遍。
+    #
+    # 之所以能这样"跨进程续跑"，是因为 Ren'Py 的存档记录的是执行位置 +
+    # 整个 store；只要恢复点落在这个 label 里，后面的校验语句就会接着执行。
+    $ do_savecheck = True
+    $ do_loadcheck = False
+
+    python:
+        CHK.check_log("savecheck_report.txt", "—— 读档校验 ——")
+        _now = {
+            "semester": engine.state.semester,
+            "attrs_total": sum(engine.player.attrs.values()),
+            "gpa": engine.player.attr("gpa"),
+            "research": engine.player.attr("research"),
+            "fatigue": engine.state.fatigue,
+            "money": engine.state.money,
+            "flags": len(engine.player.flags),
+            "unlocked": len(engine.player.unlocked),
+        }
+        CHK.check_log("savecheck_report.txt", "读档后：学期=%s 属性合计=%d gpa=%d research=%d fatigue=%d money=%d flag=%d 节点=%d" % (
+            C.semester_label(_now["semester"]), _now["attrs_total"], _now["gpa"],
+            _now["research"], _now["fatigue"], _now["money"],
+            _now["flags"], _now["unlocked"]))
+
+        _expect = {"semester": 5, "attrs_total": 138, "gpa": 23, "research": 16,
+                   "fatigue": 22, "money": 44}
+        _bad = {k: (_expect[k], _now[k]) for k in _expect if _now[k] != _expect[k]}
+        if _bad:
+            CHK.check_log("savecheck_report.txt", "结果：不一致 %r" % (_bad,))
+        else:
+            CHK.check_log("savecheck_report.txt", "结果：全部一致 ✔ 存档/读档往返成功")
+
+        # 读档后还得能继续玩
+        try:
+            _vis = engine.semester_cards()
+            _r = engine.play([c.id for c in _vis[: min(2, engine.ap)]]) if _vis else None
+            CHK.check_log("savecheck_report.txt", "读档后可继续：可见卡=%d 结算=%s" % (
+                len(_vis), ("是" if (_r and _r.ok) else "否")))
+            CHK.check_log("savecheck_report.txt", "技能树=%s 结局判定=%s" % (
+                engine.overall_progress(), engine.resolve_ending().name))
+        except Exception as exc:
+            CHK.check_log("savecheck_report.txt", "读档后继续玩抛异常：%r" % (exc,))
+
+        CHK.check_log("savecheck_report.txt", "savecheck 结束")
+
+    $ renpy.quit()
+
+    return
+
+
+# ================================================================ 读档自检
+#
+# 设 DSH_LOADCHECK=1 + DSH_LOADCHECK_SLOT=<槽位> 走这里：读那个存档，
+# 验证 engine 的状态真的恢复了。
+#
+# 为什么要拆成两次进程运行：`renpy.load()` 会把执行栈整个换成存档里记录的那一套，
+# 不会返回调用点，所以"存了再读"没法在同一个进程里顺序验证。
+#
+# 又及：不要在同一个帧里用 engine.play() 空推进几十次。Ren'Py 的无限循环检测
+# （execution.check_infinite_loop）在 100 条语句内没让出控制权时会抛
+# "Possible infinite loop"。真实游戏循环有 call screen 提供交互，不会触发；
+# 自检里的紧循环会。
+
+label loadcheck:
+
+    $ CHK.check_reset("loadcheck_report.txt")
+    $ CHK.check_log("loadcheck_report.txt", "loadcheck 开始")
+    $ CHK.check_log("loadcheck_report.txt", "engine 存在：%s" % (store.engine is not None))
+
+    if store.engine is None:
+        $ CHK.check_log("loadcheck_report.txt", "失败：读档后 engine 是 None（存档里的状态没恢复）")
+        $ renpy.quit()
+        return
+
+    python:
+        try:
+            CHK.check_log("loadcheck_report.txt", "学期=%s 专业=%s 起步=%s" % (
+                C.semester_label(engine.state.semester),
+                CM.majors.MAJORS[engine.player.major].name,
+                CM.starts.STARTS[engine.player.start_id].name))
+            CHK.check_log("loadcheck_report.txt", "属性合计=%d  flag数=%d  已解锁节点=%d" % (
+                sum(engine.player.attrs.values()),
+                len(engine.player.flags),
+                len(engine.player.unlocked)))
+            CHK.check_log("loadcheck_report.txt", "gpa=%d research=%d english=%d fatigue=%d money=%d" % (
+                engine.player.attr("gpa"), engine.player.attr("research"),
+                engine.player.attr("english"),
+                engine.state.fatigue, engine.state.money))
+            CHK.check_log("loadcheck_report.txt", "flags=%s" % sorted(engine.player.flags))
+        except Exception as exc:
+            CHK.check_log("loadcheck_report.txt", "读取引擎状态抛异常：%r" % (exc,))
+
+    # 读档之后还能继续玩：能出牌、能结算、技能树与结局判定都能跑
+    python:
+        try:
+            _vis = engine.semester_cards()
+            CHK.check_log("loadcheck_report.txt", "可见卡数量：%d" % len(_vis))
+            if _vis:
+                _r = engine.play([c.id for c in _vis[: min(2, engine.ap)]])
+                CHK.check_log("loadcheck_report.txt", "能继续结算：%s" % ("是" if _r.ok else ("否 " + str(_r.rejected))))
+                CHK.check_log("loadcheck_report.txt", "结算后学期：%s" % C.semester_label(engine.state.semester))
+            CHK.check_log("loadcheck_report.txt", "技能树总体进度：%s" % (engine.overall_progress(),))
+            CHK.check_log("loadcheck_report.txt", "结局判定：%s" % engine.resolve_ending().name)
+            CHK.check_log("loadcheck_report.txt", "存档界面仍能读到槽位：%s" % (slot_info("1-1") is not None))
+        except Exception as exc:
+            CHK.check_log("loadcheck_report.txt", "继续游戏抛异常：%r" % (exc,))
+
+        CHK.check_log("loadcheck_report.txt", "读档自检结束")
 
     $ renpy.quit()
 

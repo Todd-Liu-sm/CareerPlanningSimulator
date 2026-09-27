@@ -48,6 +48,14 @@ screen game_screen():
             use nav_button("竞赛", "contests")
             use nav_button("爱好", "hobbies")
             use nav_button("属性", "attrs")
+            # 存档 / 读档必须一眼能看到。一局二十多分钟，找不到存档入口
+            # 就等于随时可能白玩（这就是之前玩家反馈的问题）。
+            textbutton "存档":
+                style "ghost_button"
+                action [SetVariable("save_mode", "save"), Show("save_load_screen", mode="save")]
+            textbutton "读档":
+                style "ghost_button"
+                action [SetVariable("save_mode", "load"), Show("save_load_screen", mode="load")]
 
     # ---------------- 左栏：身份 + 六赛道 + 已投爱好
     frame:

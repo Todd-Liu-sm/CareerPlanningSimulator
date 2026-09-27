@@ -21,10 +21,11 @@ function Step($name, $script) {
     $script:results += [pscustomobject]@{ Step = $name; Exit = $LASTEXITCODE }
 }
 
-Step "pytest (pure-Python core, 182 tests)"      "pytest.ps1"
-Step "Ren'Py lint (script static check)"         "lint.ps1"
-Step "font coverage (no tofu characters)"        "font_check.ps1"
-Step "UI walkthrough (renders + screenshots)"    "run_tests.ps1"
+Step "pytest (pure-Python core)"                  "pytest.ps1"
+Step "Ren'Py lint (script static check)"          "lint.ps1"
+Step "font coverage (no tofu characters)"         "font_check.ps1"
+Step "save / load round-trip (real Ren'Py)"       "test_save.ps1"
+Step "UI walkthrough (renders + screenshots)"     "run_tests.ps1"
 
 Write-Output ""
 Write-Output ("=" * 68)
