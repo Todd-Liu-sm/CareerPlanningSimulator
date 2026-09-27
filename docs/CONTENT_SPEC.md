@@ -177,7 +177,7 @@ class ActionCard:
 
 ```python
 GENERAL_CARDS: tuple[ActionCard, ...] = ()      # 通用卡 ~90 张
-MAJOR_CARDS: tuple[ActionCard, ...] = ()        # 专业专属 ~144 张
+MAJOR_CARDS: tuple[ActionCard, ...] = ()        # 专业专属 234 张
 ALL_CARDS: tuple[ActionCard, ...] = ()          # = GENERAL + MAJOR
 CARDS: dict[str, ActionCard] = {}
 def get(card_id: str) -> ActionCard: ...
@@ -198,7 +198,7 @@ contest  cert  volunteer  money
 **起步线专属 tag（`start_affinity` 用）**：`ace`（竞赛大佬）、`cadre`（干部苗子）、`scholar`（小镇做题家）、`artisan`（文艺特长）、`normal`（标准新生）
 
 **内容要求**
-- 通用卡 ≥90 张，覆盖 16 个学期，**每学期至少 6 张可用通用卡**。
+- 通用卡 127 张，覆盖 16 个学期，**每学期至少 6 张可用通用卡**。
 - 专业专属卡：cs 32 / biz 32 / mech 30 / civil 30 / sci 30 / hum 28 / ocean 26 / med 26。
 - **每个 (专业, 学期) 组合至少 2 张可用专属卡**（会被测试断言）。
 - 每个学期至少 1 张 `safe` 保底卡（通用池里放就行，建议 6–8 张，覆盖全程）。

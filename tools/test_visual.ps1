@@ -1,4 +1,4 @@
-# 界面走查 + 截图。
+﻿# 界面走查 + 截图。
 #
 # 跑法：powershell -File tools/test_visual.ps1
 #

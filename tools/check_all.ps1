@@ -1,4 +1,4 @@
-# 改一处就重跑：pytest + lint + Ren'Py 走查，最后汇总。
+﻿# 改一处就重跑：pytest + lint + Ren'Py 走查，最后汇总。
 #
 # 用法：powershell -File tools/check_all.ps1
 

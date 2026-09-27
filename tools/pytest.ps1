@@ -1,4 +1,4 @@
-# 跑 pytest（纯 Python 内核测试）。
+﻿# 跑 pytest（纯 Python 内核测试）。
 #
 # 依赖装在 .tools/pylibs 里（不污染系统 Python）。
 # 用法：

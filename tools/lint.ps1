@@ -1,4 +1,4 @@
-# 跑 Ren'Py 的 lint（脚本静态检查）。退出码非 0 表示有问题。
+﻿# 跑 Ren'Py 的 lint（脚本静态检查）。退出码非 0 表示有问题。
 #
 # 用法：powershell -File tools/lint.ps1
 

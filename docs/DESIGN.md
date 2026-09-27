@@ -277,7 +277,7 @@ bridge.rpy     Ren'Py store ↔ 内核，格式化，动作包装
 screens_*.rpy  UI，只读 bridge 暴露的数据
 ```
 
-**为什么这样分**：让 181 条测试和 3000 局平衡模拟能在 2.5 秒内跑完，
+**为什么这样分**：让 178 条测试和 3000 局平衡模拟能在 2.5 秒内跑完，
 不需要启动图形界面。`tests/test_content_integrity.py` 里有两条断言
 （`test_core_modules_do_not_import_renpy`、`test_core_modules_have_no_side_effect_io`）
 在守住这条线。

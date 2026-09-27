@@ -1,4 +1,4 @@
-# 跑 Ren'Py 自动化走查。
+﻿# 跑 Ren'Py 自动化走查。
 #
 # 用法：
 #   powershell -File tools/run_tests.ps1                    # 全部

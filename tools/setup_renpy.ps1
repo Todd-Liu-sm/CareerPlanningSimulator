@@ -1,4 +1,4 @@
-# 下载并解压 Ren'Py SDK，并把工程注册到 launcher。
+﻿# 下载并解压 Ren'Py SDK，并把工程注册到 launcher。
 #
 # 用法（在仓库根目录）：
 #   powershell -File tools/setup_renpy.ps1
