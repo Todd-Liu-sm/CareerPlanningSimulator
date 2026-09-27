@@ -34,3 +34,5 @@ dist/
 *.swp
 Thumbs.db
 desktop.ini
+
+requirement.md
