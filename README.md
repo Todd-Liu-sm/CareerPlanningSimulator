@@ -10,7 +10,14 @@
 
 ## 直接玩
 
-去 `dist/` 拿打包好的 zip，解压后双击里面的 exe。
+去 `dist/` 拿 `本科职业发展模拟器-1.0.0-win64.zip`，**解压后双击里面的 exe**。
+
+绿色包，不写注册表、不装运行库、不联网，删掉文件夹就等于卸载。
+存档不在这个文件夹里（在系统的用户目录下），所以换个位置解压也能接着玩。
+
+> **为什么没有 setup.exe**：第一版做过一个 C# 自解压安装程序，但它是个未签名的
+> 可执行文件，正是 Windows 和各种安全软件最爱盘问的形态 —— 玩家还没进游戏就先撞上
+> 安全提示。绿色包解压即玩，中间没有任何环节，所以把安装程序撤了。
 
 ---
 
@@ -149,7 +156,7 @@ powershell -File tools/build.ps1
 | `tools/test_save.ps1` | 真 Ren'Py 存档/读档往返校验（起两次进程） |
 | `tools/run_tests.ps1` | 界面走查 + 截图到 `tests/screenshots/` |
 | `tools/run_tests.ps1 -EndingOnly` | 只拍结局页（13_ending.png） |
-| `tools/build.ps1` | 打包到 `dist/`，并自动解包校验产物 |
+| `tools/build.ps1` | 打包到 `dist/`（绿色包 + zip），并自动解包校验产物 |
 | `python tools/simulate.py --games 3000 --by-major` | 平衡模拟：结局分布、节点可达性 |
 | `python tools/gen_actions.py` | 重新生成 `game/core/actions.py`（改内容表之后跑） |
 | `python tools/check_font_coverage.py` | 扫描所有会被渲染的字符串，找缺字 |
@@ -212,6 +219,8 @@ game/
 ## 已知边界
 
 - 只做了 Windows 包，Mac/Linux 没打包（Ren'Py 本身支持，改 `tools/build.ps1` 的 `-Package` 就行）。
+- **只发绿色包，没有安装程序**。所以没有开始菜单项、没有自动卸载入口 —— 想卸载就删文件夹。
+  这是刻意的：未签名的安装 exe 会招来安全软件盘问，绿色包没有这些环节。
 - 没有音乐音效，接口留着。
 - 没有成就系统，只有结局标签。
 - **心理韧性在大多数局里会顶到上限**：它是支撑型属性，没有任何结局门槛引用它，

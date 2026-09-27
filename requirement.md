@@ -38,6 +38,12 @@
 **做到了。** Ren'Py 8.5.3，产出 Windows 绿色包（`tools/build.ps1`）。
 Mac/Linux 没打包 —— Ren'Py 本身支持，改 `build.ps1` 的 `-Package` 参数即可，但没有测试过。
 
+**只有绿色包，没有安装程序。** v1.0 做过一个 C# 自解压 setup.exe（把 zip 当 trailer 贴在
+一个 csc 编译的壳后面，运行后解到 `%LOCALAPPDATA%` 并建桌面快捷方式），v1.1 撤掉了：
+未签名的自解压 exe 是安全软件最爱盘问的形态，玩家还没进游戏就先撞提示。
+绿色包解压即玩、删文件夹即卸载，中间没有任何环节。要恢复的话，
+`git show 4c3d038:tools/installer_stub.cs` 里还有那个壳。
+
 ### 3. 「文字为主，配合简约 UI 和一点小图形」
 
 **做到了，而且图形是纯矢量的。** 深色石板配色；所有图形（进度条、技能树节点、连线、
@@ -291,7 +297,7 @@ Mac/Linux 没打包 —— Ren'Py 本身支持，改 `build.ps1` 的 `-Package` 
 | 存档 / 读档往返 | 通过（`tools/test_save.ps1` 起两次真进程核对数值） |
 | 5 条起步线第一学期差异 | 通过 |
 | 1280×720 与 1920×1080 不重叠 | 1280×720 布局固定；1920 下 Ren'Py 按比例缩放（`config.screen_width/height` 固定，引擎自动缩放） |
-| `tools/build.ps1` 产出可玩包 | 通过 |
+| `tools/build.ps1` 产出可玩包 | 通过（绿色包 + zip；已实测跑通完整一局到结局页） |
 
 ---
 

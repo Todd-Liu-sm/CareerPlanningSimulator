@@ -1,12 +1,22 @@
-# Build the Windows release: clean zip, unpacked folder, and an installer.
+# Build the Windows release: a clean zip plus an unpacked folder.
 #
 #   powershell -File tools/build.ps1
-#   powershell -File tools/build.ps1 -SkipInstaller
 #
 # Output (all under dist/):
 #   <name>-<version>-pc/                  unpacked, ready to run
 #   <name>-<version>-win64.zip            clean zip (no dev files)
-#   <name>-<version>-setup.exe            self-extracting installer
+#
+# There is deliberately NO setup.exe.
+#
+# There used to be one: a C# stub with the zip appended as a trailer, which
+# extracted to %LOCALAPPDATA% and dropped a desktop shortcut. It was removed
+# because an unsigned self-extracting exe is exactly the shape of thing Windows
+# and third-party security software like to interrogate, so players hit security
+# prompts before they ever reached the game. The portable zip unpacks and runs
+# with nothing in the way, which is all this project needs.
+#
+# If an installer is ever wanted again, `git show 4c3d038:tools/installer_stub.cs`
+# has the stub and the commit before this one has the ~70 lines that drove it.
 #
 # --------------------------------------------------------------------------
 # KEEP THIS FILE PURE ASCII.
@@ -30,7 +40,6 @@
 #   entries out of the extracted result, rebuild the zip ourselves, and verify.
 
 param(
-    [switch]$SkipInstaller,
     [string]$Destination = "dist"
 )
 
@@ -224,93 +233,6 @@ $zipPath = Join-Path $destPath $zipName
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $unpackedDir "*") -DestinationPath $zipPath -CompressionLevel Optimal
 
-# ---------------------------------------------------------------- installer
-#
-# A single self-contained setup .exe: a small C# stub (tools/installer_stub.cs)
-# compiled with the csc.exe that ships with Windows, with the game zip appended
-# as a trailer. Running it extracts to %LOCALAPPDATA%, makes a desktop shortcut,
-# and offers to launch.
-#
-# Why not IExpress: it fails silently with /Q (exit 1, no output) and its SED
-# format mishandles non-ASCII paths -- which this project's folder name has.
-# csc + an appended payload has no such restriction.
-
-$setupPath = $null
-if (-not $SkipInstaller) {
-    $setupName = $appName + "-" + $version + "-setup.exe"
-    $setupPath = Join-Path $destPath $setupName
-    Remove-Item -Force $setupPath -ErrorAction SilentlyContinue
-
-    $csc = $null
-    foreach ($candidate in @(
-        (Join-Path $env:SystemRoot "Microsoft.NET\Framework64\v4.0.30319\csc.exe"),
-        (Join-Path $env:SystemRoot "Microsoft.NET\Framework\v4.0.30319\csc.exe")
-    )) {
-        if (Test-Path $candidate) { $csc = $candidate; break }
-    }
-
-    $stubSrc = Join-Path $root "tools/installer_stub.cs"
-
-    if (-not $csc) {
-        Write-Output "csc.exe not found (no .NET Framework); skipping installer."
-    } elseif (-not (Test-Path $stubSrc)) {
-        Write-Output "tools/installer_stub.cs missing; skipping installer."
-    } else {
-        # Substitute the placeholders. Done in Python so the non-ASCII game name
-        # is handled with a known-correct encoding rather than PowerShell's.
-        $subst = Join-Path $root ".tools/installer_build.py"
-        @'
-import pathlib, sys
-src_path, out_path, name, exe = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-src = pathlib.Path(src_path).read_text(encoding="utf-8")
-src = src.replace("__GAME_NAME__", name).replace("__GAME_EXE__", exe)
-src = src.replace("__PAYLOAD_ZIP__", "")
-pathlib.Path(out_path).write_text(src, encoding="utf-8")
-'@ | Set-Content -LiteralPath $subst -Encoding UTF8
-
-        $genCs = Join-Path $root ".tools/installer_gen.cs"
-        $genExe = Join-Path $root ".tools/installer_gen.exe"
-        Remove-Item -Force $genExe -ErrorAction SilentlyContinue
-
-        & python $subst $stubSrc $genCs $appName ($appName + ".exe")
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $genCs)) {
-            Write-Output "Failed to generate installer source; skipping installer."
-        } else {
-            $cscArgs = @(
-                "/nologo", "/target:winexe", "/optimize+",
-                ("/out:" + $genExe),
-                "/r:System.IO.Compression.FileSystem.dll",
-                "/r:System.Windows.Forms.dll",
-                "/r:System.Drawing.dll",
-                $genCs
-            )
-            & $csc @cscArgs | Out-Null
-            if (-not (Test-Path $genExe)) {
-                Write-Output "csc failed to build the installer stub; skipping installer."
-            } else {
-                # Append: [zip bytes][8-byte length][magic]  -- must match the C# side.
-                $zipBytes = [System.IO.File]::ReadAllBytes($zipPath)
-                $magic = [System.Text.Encoding]::ASCII.GetBytes("CSIMPAYLOADv1`0`0`0")
-                $lengthBytes = [BitConverter]::GetBytes([int64]$zipBytes.Length)
-
-                $outStream = [System.IO.File]::Create($setupPath)
-                try {
-                    $stubBytes = [System.IO.File]::ReadAllBytes($genExe)
-                    $outStream.Write($stubBytes, 0, $stubBytes.Length)
-                    $outStream.Write($zipBytes, 0, $zipBytes.Length)
-                    $outStream.Write($lengthBytes, 0, $lengthBytes.Length)
-                    $outStream.Write($magic, 0, $magic.Length)
-                } finally {
-                    $outStream.Close()
-                }
-                Write-Output ("Installer built: " + $setupName)
-            }
-        }
-
-        Remove-Item -Force $genCs, $genExe, $subst -ErrorAction SilentlyContinue
-    }
-}
-
 # ---------------------------------------------------------------- verify
 
 Write-Output ""
@@ -340,9 +262,9 @@ $zipMB = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
 $checks["zip size sane ($zipMB MB)"] = ($zipMB -gt 20 -and $zipMB -lt 120)
 $checks["zip built"] = (Test-Path $zipPath)
 
-if (-not $SkipInstaller) {
-    $checks["installer built"] = ($null -ne $setupPath -and (Test-Path $setupPath))
-}
+# No setup.exe should ever appear again; if one does, something re-added it.
+$straySetup = @(Get-ChildItem $destPath -Filter "*-setup.exe" -ErrorAction SilentlyContinue)
+$checks["no setup.exe (portable only)"] = ($straySetup.Count -eq 0)
 
 $failed = @()
 foreach ($key in $checks.Keys) {
