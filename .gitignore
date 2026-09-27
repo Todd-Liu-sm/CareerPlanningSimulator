@@ -1,0 +1,36 @@
+# ---- 引擎与依赖（体积大，不进仓库）----
+.renpy-sdk/
+.renpy-dl/
+.tools/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ---- Ren'Py 生成物 ----
+game/*.rpyc
+game/cache/
+game/saves/
+game/*.log
+game/errors.log
+*.rpy.bak
+log.txt
+errors.txt
+traceback.txt
+image_cache.txt
+
+# ---- 测试与打包产物 ----
+tests/screenshots/
+tests/*.txt
+dist/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
