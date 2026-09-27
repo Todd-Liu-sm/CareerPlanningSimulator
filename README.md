@@ -118,10 +118,11 @@ powershell -File tools/build.ps1
 
 | 命令 | 作用 |
 |---|---|
-| `tools/pytest.ps1` | 纯 Python 内核测试（178 条） |
+| `tools/pytest.ps1` | 纯 Python 内核测试（182 条） |
 | `tools/lint.ps1` | Ren'Py 脚本静态检查 |
-| `tools/run_tests.ps1` | Ren'Py 走查 + 截图到 `tests/screenshots/` |
-| `tools/build.ps1` | 打包到 `dist/` |
+| `tools/font_check.ps1` | 字体覆盖检查（防止界面出现豆腐块） |
+| `tools/run_tests.ps1` | 界面走查 + 截图到 `tests/screenshots/`（14 张） |
+| `tools/build.ps1` | 打包到 `dist/`，并自动解包校验产物 |
 | `python tools/simulate.py --games 3000 --by-major` | 平衡模拟：结局分布、节点可达性 |
 | `python tools/debug_run.py --strategy 考研` | 打印一局的完整过程，排障用 |
 
@@ -152,7 +153,7 @@ game/
 ```
 
 **分层原则**：所有数值逻辑在 `core/` 里，UI 只做渲染和点击分发。
-所以平衡模拟和 178 条测试都能在**不启动 Ren'Py** 的情况下跑完（2.5 秒）。
+所以平衡模拟和 182 条测试都能在**不启动 Ren'Py** 的情况下跑完（2.5 秒）。
 
 ### 调参
 

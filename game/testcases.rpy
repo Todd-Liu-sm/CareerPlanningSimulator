@@ -1,6 +1,6 @@
 # 自动化走查的说明 + 两个占位 testcase。
 #
-# ⚠ 重要：Ren'Py 的 test 框架在 headless（SDL_VIDEODRIVER=dummy）下会卡住 ——
+# ※ 重要：Ren'Py 的 test 框架在 headless（SDL_VIDEODRIVER=dummy）下会卡住 ——
 #   实测反复出现 "ui.interact called with non-empty widget/layer stack" 之后
 #   无限等待，跑不出截图。所以**界面走查不走 test 框架**，改用游戏内置的自检：
 #

@@ -294,7 +294,7 @@ def _print_playthrough(eng) -> None:
         if unlocked:
             print("        解锁：%s" % "、".join(unlocked))
         for note in entry.get("notes", ()):
-            print("        · %s" % note)
+            print("        ・ %s" % note)
     print("-" * 68)
     print("属性：", {k: v for k, v in sorted(eng.player.attrs.items()) if v})
     print("疲劳：%d   经济：%d" % (eng.state.fatigue, eng.state.money))
@@ -403,7 +403,7 @@ def _report(
             print("    - %s %s（%s，门槛 %s）" % (node.id, node.name, node.track or "共享", node.gates))
         problems.append("%d 个节点从未被解锁" % len(dead))
     else:
-        print("  没有死节点 ✓")
+        print("  没有死节点 ✔")
     rarest = sorted(SKT.NODE_LIST, key=lambda n: node_hits.get(n.id, 0))[:5]
     print("  最难达成的 5 个：")
     for node in rarest:
@@ -438,7 +438,7 @@ def _report(
         for problem in problems:
             print("   - %s" % problem)
     else:
-        print("全部验收指标达标 ✓")
+        print("全部验收指标达标 ✔")
 
 
 def main() -> int:

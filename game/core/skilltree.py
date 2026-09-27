@@ -54,7 +54,7 @@ class SkillNode:
     id: str
     track: str = ""                       # 6 赛道之一；共享 / 专业专属节点用 ""
     stage: str = "baseline"               # baseline core expert master capstone
-    name: str = ""                        # ≤6 个汉字
+    name: str = ""                        # <=6 个汉字
     desc: str = ""                        # 1 句：达成条件 + 意义
     requires: tuple[str, ...] = ()        # 前置节点 id
     gates: dict[str, int] = field(default_factory=dict)          # 属性门槛（4-20）
@@ -1010,7 +1010,7 @@ def check_unlock(player, node: SkillNode, semester: int) -> tuple[bool, list[str
     for key, need in node.gates.items():
         have = player.attrs.get(key, 0)
         if have < need:
-            reasons.append(f"需 {C.ATTR_NAMES.get(key, key)} ≥ {need}（当前 {have}）")
+            reasons.append(f"需 {C.ATTR_NAMES.get(key, key)} >= {need}（当前 {have}）")
 
     return (not reasons, reasons)
 

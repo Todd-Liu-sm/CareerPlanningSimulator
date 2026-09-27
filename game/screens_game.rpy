@@ -364,10 +364,12 @@ screen semester_summary(result):
                         spacing 3
                         text "技能树解锁" style "t_small" color c_gold
                         for name in unlock_notice:
-                            text "· [name]" style "t_small" color c_accent
+                            text "・ [name]" style "t_small" color c_accent
 
             if result.message:
-                text "[result['message']]" style "t_small" color c_text_dim
+                # result 是 CardResult（dataclass），必须用点号；写成 result['message']
+                # 会抛 "'CardResult' object is not subscriptable"。
+                text "[result.message]" style "t_small" color c_text_dim
 
             textbutton "继续":
                 style "primary_button"

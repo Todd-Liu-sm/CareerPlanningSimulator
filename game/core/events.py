@@ -1,6 +1,6 @@
 """随机事件池：21 个事件 + 筛选 / 加权抽取逻辑（纯数据 + 纯函数）。
 
-契约：``docs/CONTENT_SPEC.md`` §8
+契约：``docs/CONTENT_SPEC.md`` #8
 --------------------------------------------------------------
 **21 个事件，id 前缀 ``e_``，全部唯一。** 4 个 ``narration``（只有 1 个选项，
 但一样给 ``mind`` 变化，不让玩家觉得白触发），17 个 ``choice``（每个 3 个选项）。
@@ -11,16 +11,16 @@
     - ``majors``：``()`` = 通用；否则只对列出的专业类可见
     - ``requires_flags``：全部持有才进池
     - ``requires_attr_above``：全部达到才进池
-    - ``requires_tracks``：任一条赛道倾向 ≥ ``C.TRACK_COMMITTED_AT``(40) 即进池
-    - ``requires_hobbies``：任一爱好等级 ≥ 2 即进池
+    - ``requires_tracks``：任一条赛道倾向 >= ``C.TRACK_COMMITTED_AT``(40) 即进池
+    - ``requires_hobbies``：任一爱好等级 >= 2 即进池
 
 **软门槛**
     ``requires_attr_below`` **不**排除事件，而是「越低越容易发生」：每满足一条，
-    权重 ×3。这是 spec §8 对它的注释（「身体低于 10 时更容易触发」）——
+    权重 ×3。这是 spec #8 对它的注释（「身体低于 10 时更容易触发」）——
     所以身体很好的玩家也抽得到「生病」，只是概率低得多；用
     :func:`condition_multiplier` / :func:`weight_of` 可以直接看到这个倍数。
 
-**数值尺度**：单个选项属性点合计 ≤ 8、单属性绝对值 ≤ 6（spec 的硬上限是 9）；
+**数值尺度**：单个选项属性点合计 <= 8、单属性绝对值 <= 6（spec 的硬上限是 9）；
 疲劳 / 经济按 ``resources`` 走（疲劳单次 2-12，经济单次 2-12）。
 
 **调用方式**（引擎侧）::
@@ -45,7 +45,7 @@ DEFAULT_WEIGHT = 10
 #: ``requires_attr_below`` 每满足一条，权重乘这个数。
 LOW_ATTR_MULTIPLIER = 3.0
 
-#: ``requires_hobbies`` 要求的爱好等级（spec §8：爱好等级 ≥ 2 才进池）。
+#: ``requires_hobbies`` 要求的爱好等级（spec #8：爱好等级 >= 2 才进池）。
 HOBBY_REQUIRE_LEVEL = 2
 
 
@@ -813,7 +813,7 @@ def condition_multiplier(event: GameEvent, state: object) -> float:
     """软条件对权重的放大倍数。
 
     目前只有 ``requires_attr_below``：每条**已满足**的条件把权重 ×3
-    （spec §8：「身体低于 10 时更容易触发」）。两条都满足就是 ×9。
+    （spec #8：「身体低于 10 时更容易触发」）。两条都满足就是 ×9。
     """
     if not event.requires_attr_below:
         return 1.0

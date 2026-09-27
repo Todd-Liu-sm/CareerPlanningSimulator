@@ -11,7 +11,7 @@
 #   详情面板 y 540（高 134）→ 底边 674；共享节点 y 682（高 34）→ 底边 716。
 #   全部落在 720 以内，而且**8 个节点一次全显示、不用滚动**。
 #
-#   ⚠ 早期把行高设成 92、只显示 6 行，结果网格伸到 y=682 被详情面板盖住，
+#   ※ 早期把行高设成 92、只显示 6 行，结果网格伸到 y=682 被详情面板盖住，
 #     第 7-8 行永远看不到。lint 查不出来，只能看截图。改这几个数之前请重算一遍。
 define tree_col_w = 200
 define tree_row_h = 50
@@ -135,7 +135,7 @@ screen overlay_tree():
                     hbox:
                         spacing 10
                         text "[_detail['name']]" style "t_head"
-                        text "[_detail['track_name']] · [_detail['stage_name']]" style "t_tiny" color c_text_faint yalign 0.5
+                        text "[_detail['track_name']] ・ [_detail['stage_name']]" style "t_tiny" color c_text_faint yalign 0.5
                         text "[_detail['status']]" style "t_tiny" color (c_accent if _detail['status'] == 'unlocked' else c_warn) xalign 1.0 yalign 0.5
                     text "[_detail['desc']]" style "t_small" color c_text_dim
                     hbox:
@@ -208,7 +208,7 @@ screen tree_shared_chip(node):
             yalign 0.5
             text "[node['name']]" style "t_tiny" color _color
             if node["status"] == "unlocked":
-                text "✓" style "t_tiny" color c_accent
+                text "✔" style "t_tiny" color c_accent
 
 
 # ================================================================ 竞赛页
@@ -358,7 +358,7 @@ screen hobby_card(row):
                 if row["next"]:
                     text "[row['xp']] / [row['next']] 经验" style "t_tiny" color c_text_faint yalign 0.5
                 else:
-                    text "[row['xp']] 经验 · 已满级" style "t_tiny" color c_accent yalign 0.5
+                    text "[row['xp']] 经验 ・ 已满级" style "t_tiny" color c_accent yalign 0.5
 
 
 # ================================================================ 属性页
@@ -414,7 +414,7 @@ screen overlay_attrs():
                     use resource_line("疲劳", engine.state.fatigue, c_danger, C.RESOURCE_MAX)
                     use resource_line("经济", engine.state.money, c_gold, C.RESOURCE_MAX)
                     null height 6
-                    text "疲劳 ≥ [C.FATIGUE_PENALTY_AT] 所有收益打八折；≥ [C.FATIGUE_BURNOUT_AT] 会透支。" style "t_tiny" color c_text_faint
+                    text "疲劳 >= [C.FATIGUE_PENALTY_AT] 所有收益打八折；>= [C.FATIGUE_BURNOUT_AT] 会透支。" style "t_tiny" color c_text_faint
 
             frame:
                 xysize (610, 120)

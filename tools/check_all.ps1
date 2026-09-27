@@ -1,6 +1,10 @@
-﻿# 改一处就重跑：pytest + lint + Ren'Py 走查，最后汇总。
+# Run everything that guards the build: pytest, Ren'Py lint, font coverage,
+# and the UI walkthrough. Prints a summary at the end.
 #
-# 用法：powershell -File tools/check_all.ps1
+#   powershell -File tools/check_all.ps1
+#
+# KEEP THIS FILE ASCII-ONLY (Windows PowerShell 5.1 reads BOM-less files as the
+# system codepage and mangles non-ASCII literals).
 
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
@@ -11,31 +15,32 @@ $results = @()
 function Step($name, $script) {
     Write-Output ""
     Write-Output ("=" * 68)
-    Write-Output "  $name"
+    Write-Output ("  " + $name)
     Write-Output ("=" * 68)
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot $script)
     $script:results += [pscustomobject]@{ Step = $name; Exit = $LASTEXITCODE }
 }
 
-Step "pytest（纯 Python 内核）" "pytest.ps1"
-Step "Ren'Py lint（脚本静态检查）" "lint.ps1"
-Step "Ren'Py 走查（界面 + 截图）" "run_tests.ps1"
+Step "pytest (pure-Python core, 182 tests)"      "pytest.ps1"
+Step "Ren'Py lint (script static check)"         "lint.ps1"
+Step "font coverage (no tofu characters)"        "font_check.ps1"
+Step "UI walkthrough (renders + screenshots)"    "run_tests.ps1"
 
 Write-Output ""
 Write-Output ("=" * 68)
-Write-Output "  汇总"
+Write-Output "  SUMMARY"
 Write-Output ("=" * 68)
 $failed = 0
 foreach ($row in $results) {
     $mark = if ($row.Exit -eq 0) { "OK  " } else { "FAIL" }
     if ($row.Exit -ne 0) { $failed++ }
-    Write-Output ("  {0}  {1}（exit {2}）" -f $mark, $row.Step, $row.Exit)
+    Write-Output ("  {0}  {1}  (exit {2})" -f $mark, $row.Step, $row.Exit)
 }
 
 Write-Output ""
 if ($failed -eq 0) {
-    Write-Output "全部通过。"
+    Write-Output "ALL CHECKS PASSED"
 } else {
-    Write-Output "$failed 个环节失败。"
+    Write-Output ("{0} CHECK(S) FAILED" -f $failed)
 }
 exit $failed

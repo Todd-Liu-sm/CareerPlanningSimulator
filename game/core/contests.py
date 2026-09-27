@@ -109,7 +109,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
     Contest(
         id="c_cccc",
         name="CCCC 天梯赛",
-        full_name="中国高校计算机大赛·团体程序设计天梯赛",
+        full_name="中国高校计算机大赛・团体程序设计天梯赛",
         majors=("cs",),
         is_flex=True,
         tiers=("school", "prov", "national"),
@@ -186,8 +186,8 @@ CONTEST_LIST: tuple[Contest, ...] = (
     ),
     Contest(
         id="c_bigdata",
-        name="中国高校计算机大赛·大数据挑战赛",
-        full_name="中国高校计算机大赛·大数据挑战赛",
+        name="中国高校计算机大赛・大数据挑战赛",
+        full_name="中国高校计算机大赛・大数据挑战赛",
         majors=("cs",),
         is_flex=True,
         tiers=("school", "prov", "national"),
@@ -195,7 +195,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
         normal_bonus={"research": 1},
         team=True,
         note="线上提交、按榜单排名，前期做特征工程最花时间，最后要在答辩里讲清楚模型为什么有效。",
-        certs=("CDA 数据分析师 Level Ⅰ",),
+        certs=("CDA 数据分析师 Level I",),
     ),
     Contest(
         id="c_outsource",
@@ -247,7 +247,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
         normal_bonus={"research": 1},
         team=True,
         note="九月开学第一周周四早上八点开赛、连做三天，A/B/C 三题选一交一篇论文，三个人里至少要有一个会写作的。",
-        certs=("CDA 数据分析师 Level Ⅰ",),
+        certs=("CDA 数据分析师 Level I",),
     ),
     Contest(
         id="c_mcm",
@@ -588,7 +588,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
         normal_bonus={"research": 1},
         team=True,
         note="三四月报名、六月交论文，题目从给定的几个方向里选，评审最看重数据来源可不可靠、模型假设说没说清。",
-        certs=("CDA 数据分析师 Level Ⅰ",),
+        certs=("CDA 数据分析师 Level I",),
     ),
     # ---------------------------------------------------------- 经济管理
     Contest(
@@ -615,7 +615,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
         normal_bonus={"research": 1},
         team=True,
         note="先过网考知识赛，再组队做实地调研、写报告，省赛答辩之后进全国总决赛，问卷回收量是硬指标。",
-        certs=("CDA 数据分析师 Level Ⅰ",),
+        certs=("CDA 数据分析师 Level I",),
     ),
     Contest(
         id="c_finance",
@@ -882,8 +882,8 @@ CONTEST_LIST: tuple[Contest, ...] = (
     # ---------------------------------------------------------- 人文社科
     Contest(
         id="c_fltrp",
-        name="“外研社·国才杯”大学生外语能力大赛",
-        full_name="“外研社·国才杯”全国大学生外语能力大赛",
+        name="“外研社・国才杯”大学生外语能力大赛",
+        full_name="“外研社・国才杯”全国大学生外语能力大赛",
         majors=("hum",),
         is_flex=True,
         tiers=("school", "prov", "national"),

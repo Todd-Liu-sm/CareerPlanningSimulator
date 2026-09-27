@@ -63,8 +63,8 @@ class ActionCard:
     """一张行动卡。字段顺序与 ``docs/CONTENT_SPEC.md`` 第 5 节完全一致。"""
 
     id: str
-    name: str                       # ≤8 个汉字，卡片标题
-    text: str                       # 1-2 句，写清“你具体干了什么”，≤60 字
+    name: str                       # <=8 个汉字，卡片标题
+    text: str                       # 1-2 句，写清“你具体干了什么”，<=60 字
     rarity: str
     sem_lo: int                     # 最早可用学期
     sem_hi: int                     # 最晚可用学期
@@ -1668,7 +1668,7 @@ def _build_contest_cards() -> tuple[ActionCard, ...]:
             cards.append(
                 ActionCard(
                     id=card_id,
-                    name=f"{contest.name}·{C.CONTEST_TIER_NAMES[tier]}",
+                    name=f"{contest.name}・{C.CONTEST_TIER_NAMES[tier]}",
                     text=_STAGE_TEXT[tier],
                     rarity=_TIER_RARITY[tier],
                     sem_lo=C.CONTEST_TIER_EARLIEST[tier],

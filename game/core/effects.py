@@ -88,7 +88,7 @@ def card_gate_reasons(attrs: dict[str, int], card: Any) -> list[str]:
     for key, need in gate.items():
         have = attrs.get(key, 0)
         if have < need:
-            reasons.append(f"需 {C.ATTR_NAMES[key]} ≥ {need}（当前 {have}）")
+            reasons.append(f"需 {C.ATTR_NAMES[key]} >= {need}（当前 {have}）")
     return reasons
 
 
@@ -140,7 +140,7 @@ def _base_and_units(
         所以倍数 = 阶梯基数 × CONTEST_STRENGTH_SCALE × RARITY_MULT。
 
     这里**不再做任何归一化**。早期版本试过把 effects 折算成权重再乘基准值，
-    结果那个基准值和它自己约掉了（base × sum/base ≡ sum），白绕一圈还引入过 bug。
+    结果那个基准值和它自己约掉了（base × sum/base = sum），白绕一圈还引入过 bug。
     现在就是直白的"值 × 倍数"。
     """
     rarity = getattr(card, "rarity", "common")

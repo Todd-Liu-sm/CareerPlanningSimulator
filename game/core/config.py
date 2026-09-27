@@ -116,7 +116,7 @@ RESOURCE_NAMES: dict[str, str] = {
 }
 
 RESOURCE_DESC: dict[str, str] = {
-    "fatigue": "0 最轻松，100 撑不住。疲劳 ≥60 所有收益打八折，≥85 触发透支。",
+    "fatigue": "0 最轻松，100 撑不住。疲劳 >=60 所有收益打八折，>=85 触发透支。",
     "money": "家庭支持度。越低越需要兼职，也越容易触发经济相关的随机事件。",
 }
 
@@ -294,7 +294,7 @@ CONTEST_MAIN_MULT = 1.25
 
 # ---------------------------------------------------------------- 疲劳
 
-FATIGUE_ATTR_THRESHOLD = 3      # 单学期同一属性投入 ≥ 此值 → 触发惩罚（即最多 2 点无惩罚）
+FATIGUE_ATTR_THRESHOLD = 3      # 单学期同一属性投入 >= 此值 → 触发惩罚（即最多 2 点无惩罚）
 FATIGUE_ATTR_MIND_HIT = 3       # 惩罚：心态
 FATIGUE_ATTR_BODY_HIT = 2       # 惩罚：身体
 
@@ -304,7 +304,7 @@ REST_TAGS: frozenset[str] = frozenset({"rest", "sport", "hobby_sport"})
 FATIGUE_PER_SEMESTER = 4        # 每学期基础累积的疲劳
 FATIGUE_REST_RELIEF = 4         # 每个休息类行动点抵消的疲劳（大二起作用明显）
 FATIGUE_LOW_MIND_RELIEF = 2     # 心态高时的额外恢复
-FATIGUE_HIGH_MIND_RELIEF_AT = 18  # 心态 ≥ 此值时给额外恢复
+FATIGUE_HIGH_MIND_RELIEF_AT = 18  # 心态 >= 此值时给额外恢复
 
 FATIGUE_PENALTY_AT = 60         # 疲劳达到此值，所有正收益乘 FATIGUE_PENALTY_MULT
 FATIGUE_PENALTY_MULT = 0.8
@@ -359,7 +359,7 @@ HOBBY_DESC: dict[str, str] = {
 
 # 升到第 N 级所需累计经验。索引 = 等级（0-5，共 6 项）。
 # 每次投入给 HOBBY_XP_PER_ACTION(10) 经验，所以：
-#   L1 = 投 2 次 · L2 = 5 次 · L3 = 9 次 · L4 = 14 次 · L5 = 20 次
+#   L1 = 投 2 次 ・ L2 = 5 次 ・ L3 = 9 次 ・ L4 = 14 次 ・ L5 = 20 次
 # L5「精通」是"转正"等级：爱好变成技能树的正式节点，也是一局里很难达成的事。
 HOBBY_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 20, 50, 90, 140, 200)
 
@@ -465,7 +465,7 @@ STAGE_NAMES: dict[str, str] = {
 # 卡池供给是不均衡的（research / portfolio / mind 的卡远多于 exam / leadership），
 # 所以门槛必须按**各属性的实际供给**来设，而不是按同一个数字设。
 # 实测中位值（tools/simulate.py --by-strategy 的输出）：
-#     gpa ≈ 31   english ≈ 34   intern ≈ 100(饱和)   research ≈ 100(饱和)   exam ≈ 22   leadership ≈ 21
+#     gpa ~ 31   english ~ 34   intern ~ 100(饱和)   research ~ 100(饱和)   exam ~ 22   leadership ~ 21
 # 下面的数字就是照这个分布标定的。
 ENDING_GATES: dict[str, dict[str, int]] = {
     "baoyan": {"gpa": 36, "research": 26, "english": 24},

@@ -20,7 +20,7 @@ screen splash_screen():
         spacing 18
 
         text "本科职业发展模拟器" style "t_hero" xalign 0.5
-        text "四年 · 十六个学期 · 三十八个行动点" style "t_body" color c_text_dim xalign 0.5
+        text "四年 ・ 十六个学期 ・ 三十八个行动点" style "t_body" color c_text_dim xalign 0.5
         null height 10
         text "你会把时间花在哪里？" style "t_head" color c_accent xalign 0.5
 
@@ -251,7 +251,7 @@ screen settings_screen():
                 textbutton "快" style "ghost_button" action Preference("text speed", 60)
 
             text "内核信息" style "t_small"
-            text "行动点总量 [C.TOTAL_ACTIONS] · 技能树 [len(CM.skilltree.NODE_LIST)] 节点 · 行动卡 [len(CM.actions.ALL_CARDS)] 张 · 竞赛 [len(CM.contests.CONTEST_LIST)] 项" style "t_tiny" color c_text_faint
+            text "行动点总量 [C.TOTAL_ACTIONS] ・ 技能树 [len(CM.skilltree.NODE_LIST)] 节点 ・ 行动卡 [len(CM.actions.ALL_CARDS)] 张 ・ 竞赛 [len(CM.contests.CONTEST_LIST)] 项" style "t_tiny" color c_text_faint
 
             null height 6
             textbutton "返回" style "primary_button" xalign 1.0 action Return("ok")
@@ -353,7 +353,7 @@ screen ending_screen():
                         hbox:
                             xfill True
                             text "技能树完成度" style "t_head"
-                            text "[ _bundle['overall']['done'] ] / [ _bundle['overall']['total'] ] 个节点 · [pct_text(_bundle['overall']['ratio'])]" style "t_small" color c_text_faint xalign 1.0
+                            text "[ _bundle['overall']['done'] ] / [ _bundle['overall']['total'] ] 个节点 ・ [pct_text(_bundle['overall']['ratio'])]" style "t_small" color c_text_faint xalign 1.0
                         for _row in _bundle["tracks"]:
                             use track_bar(_row)
 
@@ -368,7 +368,7 @@ screen ending_screen():
                             spacing 5
                             text "竞赛战绩" style "t_head"
                             for _line in _bundle["contests"]:
-                                text "· [_line]" style "t_small" color c_text_dim
+                                text "・ [_line]" style "t_small" color c_text_dim
 
                 # ---------------- 关键节点回顾
                 frame:
@@ -380,7 +380,7 @@ screen ending_screen():
                         spacing 5
                         text "几个你会记得的学期" style "t_head"
                         for _line in _bundle["highlights"]:
-                            text "· [_line]" style "t_small" color c_text_dim
+                            text "・ [_line]" style "t_small" color c_text_dim
 
                 # ---------------- 种子与重开
                 frame:

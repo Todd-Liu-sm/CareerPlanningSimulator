@@ -235,7 +235,7 @@ init python:
         return [(C.ATTR_SHORT.get(key, key), value, delta_color(value)) for key, value in items]
 
     def fmt_attr_map(mapping):
-        """把 {属性: 数值} 变成一行可读文字，例如「绩点 37 · 科研 100」。
+        """把 {属性: 数值} 变成一行可读文字，例如「绩点 37 ・ 科研 100」。
 
         **不能直接把 dict 塞进 Ren'Py 的 [] 插值**：`text "[ {...} ]"` 会被
         当成文本标签解析，然后抛 "Unknown text tag"（自检里真的炸过一次）。
@@ -244,7 +244,7 @@ init python:
             return "—"
         order = {key: index for index, key in enumerate(C.ATTRS)}
         items = sorted(mapping.items(), key=lambda kv: order.get(kv[0], 99))
-        return " · ".join(
+        return " ・ ".join(
             "%s %s" % (C.ATTR_SHORT.get(key, key), value) for key, value in items
         )
 
@@ -252,7 +252,7 @@ init python:
         """技能树门槛列表 → 一行文字。"""
         if not gates:
             return ""
-        return " · ".join(
+        return " ・ ".join(
             "%s %s/%s" % (C.ATTR_SHORT.get(key, key), have, need)
             for key, need, have in gates
         )

@@ -107,7 +107,7 @@ class EffectDelta:
             gained = self.hobby_after - self.hobby_before
             if gained:
                 parts.append(f"{C.HOBBY_NAMES[self.hobby_key]}+{gained}")
-        return " · ".join(parts) if parts else "（无变化）"
+        return " ・ ".join(parts) if parts else "（无变化）"
 
 
 # ================================================================ 结果对象

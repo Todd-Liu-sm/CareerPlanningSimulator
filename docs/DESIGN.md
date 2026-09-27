@@ -323,6 +323,37 @@ screens_*.rpy  UI，只读 bridge 暴露的数据
 13. **`for_major` 返回对象不是 id**。`set(CON.for_major(x))` 会因为
     dataclass 里有 dict 字段而报 unhashable。要取 `{c.id for c in ...}`。
 
+14. **内嵌字体是精简版，缺常见符号**。SourceHanSansLite 只保证 CJK 基本区，
+    `·`(U+00B7)、`✓`、`≥`、`≤`、`⚠`、罗马数字 `Ⅰ` 全都没有字形 ——
+    "CCPC·国赛" 在界面上是 "CCPC□国赛"。lint 通过、182 条测试通过，
+    **只有看截图才发现**。现在有 `tools/font_check.ps1`（直接查字体 cmap）和
+    `tests/test_fonts.py` 拦这类问题，替换表在 `tools/fix_font_glyphs.py`。
+    可用替代：`·`→`・`、`✓`→`✔`、`≥`→`>=`、`⚠`→`※`。
+
+15. **屏幕语言里 dict 和 dataclass 的取值方式不能混**。`row['name']` 对 dict、
+    `node.name` 对 dataclass；搞反了就是 "not subscriptable" 或
+    "has no attribute"。`[...]` 插值内部也是 Python 表达式，同样守这个规则。
+
+16. **list / dict 不能直接塞进 `[...]` 插值**。要么印出原文（`['a', 'b']`），
+    要么被当成文本标签抛 "Unknown text tag"（结局页就是这么崩的）。先 join
+    或用 `bridge.rpy` 里的 `fmt_attr_map()` 格式化。
+
+17. **别用 `print` 调试 Ren'Py**。独立运行时 stdout 是无效句柄，`print` 会在
+    flush 时抛 `OSError [Errno 22]`，把整个流程带崩。写文件。
+
+18. **`.ps1` 里别写中文**。Windows PowerShell 5.1 把无 BOM 文件按系统代码页
+    （这里是 GBK）读，中文字面量会破坏解析，而且报错位置会指到别处
+    （"Missing closing '}'"）。工具脚本一律 ASCII-only。确实要中文就得有
+    UTF-8 BOM —— 但任何重写文件的工具都可能把 BOM 抹掉，所以 ASCII 才稳。
+
+19. **`Composite` 不是分层容器**。它期望 `(size, (pos, displayable), ...)`
+    成对参数，参数个数为奇数直接抛 "LiveComposite requires an odd number of
+    arguments"。要叠层用 `Fixed`。
+
+20. **不要把 `game_screen` 反复 show/hide 再 `renpy.pause()`**。实测在自检流程里
+    会让 pause 永久卡住（无报错、无截图、进程不退）。画面切换改状态变量，
+    别去动屏幕的显示栈。
+
 ---
 
 ## 12. 平衡标定的流程

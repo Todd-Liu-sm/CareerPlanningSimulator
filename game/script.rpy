@@ -246,10 +246,24 @@ label selfcheck:
         jump selfcheck_finish
 
     # ---------------- 结算浮层
+    #
+    # 注意两点（都是这里踩过的）：
+    #   1. 前面的 python 块把 engine.state.action_points 设成了 0 来伪造"学期结束"，
+    #      所以这里必须先按学期把行动点补回去，否则 play() 会因为"行动点不够"
+    #      返回一个被拒绝的空结果，结算浮层就只剩标题、一张卡都没有。
+    #   2. 必须检查 result.ok。ignoring 返回值的话，这种失败会安静地画出一张
+    #      看起来"就是没内容"的截图，比报错更难发现。
     python:
         engine.state.action_points = C.ap_for(engine.semester)
-        _cards = [c for c in engine.semester_cards()][:3]
-        _res = engine.play([c.id for c in _cards])
+        _avail = engine.semester_cards()
+        _picks = [c.id for c in _avail[: max(1, engine.state.action_points)]]
+        _res = engine.play(_picks)
+        if not _res.ok:
+            _log("sum 结算被拒绝：%s" % _res.rejected)
+        elif not _res.played:
+            _log("sum 结算没有产生任何结果（play 返回空）")
+        else:
+            _log("sum 结算了 %d 张卡" % len(_res.played))
 
     show screen semester_summary(_res)
     $ _shot("13_semester_summary")
