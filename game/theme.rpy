@@ -79,6 +79,21 @@ style t_head:
     size sz_head
     color c_text
 
+# 技能树节点卡片里的文字。这些卡片是**固定高度**的，而里面的文字可能比卡片高
+# （名字换行、门槛文案很长），那就直接压出卡片、盖住下一个节点 —— 玩家截图里
+# 的"推到一块了"就是这个。卡片高度现在按字体度量算足了（见 screens_tree.rpy
+# 顶部），这两个样式再加一层硬剪裁：宁可截断，也不要溢出。
+#
+# xmaximum 在 screens_tree.rpy 的 tree_node 里按卡片实际宽度设，
+# 这里不写死，否则改列宽时会忘记同步。
+style tree_node_name is t_small:
+    size sz_small
+    layout "subtitle"
+
+style tree_node_meta is t_tiny:
+    size sz_tiny
+    layout "subtitle"
+
 style t_title:
     font ui_font
     size sz_title

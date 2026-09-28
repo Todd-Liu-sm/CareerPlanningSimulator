@@ -14,30 +14,46 @@ screen splash_screen():
 
     add Solid(c_bg_deep)
 
+    # 标题区：**放在偏上三分之一处，不要用 yalign 0.5**。
+    # 原来标题居中的同时按钮栈在 yalign 0.86，两者在 678-720 高度的窗口里
+    # 会挤到一起（玩家截图里就是标题压着第一个按钮）。
     vbox:
         xalign 0.5
-        yalign 0.5
-        spacing 18
+        ypos 118
+        spacing 20
 
         text "本科职业发展模拟器" style "t_hero" xalign 0.5
-        text "四年 ・ 十六个学期 ・ 三十八个行动点" style "t_body" color c_text_dim xalign 0.5
-        null height 10
-        text "你会把时间花在哪里？" style "t_head" color c_accent xalign 0.5
+        # 数字全部实算（bridge.scale_caption）—— 写死过一次，
+        # 改成 8 学期 / 24 行动点之后开场页还在说"十六个学期、三十八个行动点"。
+        text "[scale_caption()]" style "t_body" color c_text_dim xalign 0.5
 
+    # 主按钮：比标题低一档，留出明确的空白，让"开始新游戏"是视线落点
     vbox:
         xalign 0.5
-        yalign 0.86
-        spacing 10
+        ypos 322
+        spacing 12
+
+        text "你会把时间花在哪里？" style "t_head" color c_accent xalign 0.5
+        null height 6
         textbutton "开始新游戏" style "primary_button" xalign 0.5 action Return("start")
-        # 继续游戏：只有存在存档时才出现。存档在本作里是刚需（一局 20+ 分钟），
-        # 之前没有任何存档入口，玩家一关游戏进度就没了。
+
+    # 次级入口：贴底，但不能压到窗口边缘（原来 xalign 0.86 在矮窗口里会出界）
+    vbox:
+        xalign 0.5
+        yalign 0.97
+        spacing 9
+
         if any_save_exists():
             textbutton "继续游戏" style "ghost_button" xalign 0.5 action Function(continue_game)
             text "[newest_save_summary()]" style "t_tiny" color c_text_faint xalign 0.5
         else:
             text "还没有存档。开始新游戏后，每进入一个新学期都会自动存一次。" style "t_tiny" color c_text_faint xalign 0.5
+
         textbutton "存档 / 读档" style "ghost_button" xalign 0.5 action [SetVariable("save_mode", "load"), Show("save_load_screen", mode="load")]
-        text "本作的内核是纯数据驱动的：344 张手写行动卡、210 个竞赛阶梯、21 个随机事件。" style "t_tiny" color c_text_faint xalign 0.5
+
+        null height 4
+        # 同样的道理：这几个数字必须实算，否则会跟着内容一起过期
+        text "[content_counts()]" style "t_tiny" color c_text_faint xalign 0.5
 
 
 # ================================================================ 选起步线

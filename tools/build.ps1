@@ -93,25 +93,27 @@ Write-Output ("Building " + $appName + " " + $version)
 $destPath = Join-Path $root $Destination
 New-Item -ItemType Directory -Force -Path $destPath | Out-Null
 
-# Pre-flight: the packaged game must not be running.
+# Pre-flight: nothing may be running FROM dist/.
 #
-# This is not hypothetical. A running copy -- the one YOU launched to test -- holds
-# an open handle on game/fonts/*.otf. The failure surfaces much later, as
-# "The process cannot access the file ... because it is being used by another
-# process" from Compress-Archive, and by then the whole build has been wasted.
-# Point the user at the real cause instead.
+# This is not hypothetical. A copy launched out of dist/ holds an open handle on
+# game/fonts/*.otf. The failure surfaces much later as "The process cannot access
+# the file ... because it is being used by another process" from Compress-Archive,
+# and by then the whole build has been wasted.
+#
+# Scope matters: only processes whose executable lives under dist/ are a problem.
+# Do NOT match on process name -- the player may legitimately be running an
+# installed copy from somewhere else (e.g. D:\game\...), and refusing to build
+# because of that is just wrong.
 $busy = @()
-$busy += @(Get-Process -Name ($appName + "-" + $version + "-setup") -ErrorAction SilentlyContinue)
-$busy += @(Get-Process -Name $appName -ErrorAction SilentlyContinue)
 foreach ($proc in (Get-Process -ErrorAction SilentlyContinue)) {
     if ($proc.Id -eq $PID) { continue }
     $path = $null
     try { $path = $proc.Path } catch { continue }
-    if ($path -and $path.StartsWith($destPath, [StringComparison]::OrdinalIgnoreCase)) { $busy += $proc }
+    if (-not $path) { continue }
+    if ($path.StartsWith($destPath, [StringComparison]::OrdinalIgnoreCase)) { $busy += $proc }
 }
-$busy = @($busy | Sort-Object Id -Unique)
 if ($busy.Count -gt 0) {
-    Write-Output "These processes are still holding files in dist/ -- close them and retry:"
+    Write-Output "These processes are running out of dist/ -- close them and retry:"
     foreach ($proc in $busy) {
         Write-Output ("  pid " + $proc.Id + "  " + $proc.ProcessName)
     }

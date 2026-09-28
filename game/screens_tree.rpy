@@ -6,26 +6,33 @@
 #
 # 坐标结论（改数字之前先把这段算一遍）：
 #   6 列 × 200 宽 + 5 × 8 间距 = 1240，左右各留 20。
-#   顶部条 64 / 列头 56（y 70..126）/ 网格 y 132 / 行高 50 / 节点高 44
-#   → 4 行 = 200px，网格底边 132 + 200 = 332。
-#   共享节点条 y 372（高 34）→ 底边 406；
-#   详情面板 y 420（高 134）→ 底边 554。
+#   顶部条 64 / 列头 56（y 70..126）/ 网格 y 132 / 行高 74 / 节点高 62
+#   → 4 行 = 296px，网格底边 132 + 296 = 428。
+#   共享节点条 y 444（高 34）→ 底边 478；
+#   详情面板 y 490（高 150）→ 底边 640。留 80px 贴着窗口底边。
 #   全部落在 720 以内，而且**每条赛道的节点一次全显示、不用滚动**。
 #
-#   ※ 节点结构改过：从 6 赛道 × 8 阶段 + 8 共享（60 个）收到
-#     6 × 4 阶段（基线/核心/专精/大成）+ 6 共享 = 30 个。行高常量没变，
-#     所以现在网格只占 4 行、下面留白 —— 这是刻意的，不滚动更清楚。
+#   ※ **节点高 62 是被字体度量逼出来的，不是随手定的。**
+#     自带的思源黑体 hhea 是 ascent 973 / descent 256（unitsPerEm 1000），
+#     所以一行文字的实际高度 ≈ 字号 × 1.23：
+#         t_small(17px) → 20.9px    t_tiny(14px) → 17.2px
+#     节点卡片是"名字一行 + 状态一行"两行：
+#         20.9 + 17.2 + spacing 1 + padding(4×2) = 47.1 → 62 留了 15px 余量
+#     之前这里写 44，比两行的真实高度还矮，于是文字直接压出卡片、
+#     盖住下一个节点（玩家截图里的"推到一块了"就是这个）。
+#     行高 50 更糟 —— 比卡片本身还小，卡片必然互相重叠。
+#     实测过 74/62 这一组：4 行卡片铺得开，又不会把详情面板挤出屏幕。
 #
 #   ※ 早期把行高设成 92、只显示 6 行，结果网格伸到 y=682 被详情面板盖住，
 #     第 7-8 行永远看不到。lint 查不出来，只能看截图。改这几个数之前请重算一遍。
 define tree_col_w = 200
-define tree_row_h = 50
-define tree_node_h = 44
+define tree_row_h = 74
+define tree_node_h = 62
 define tree_pad_x = 20
 define tree_header_y = 70
 define tree_grid_y = 132
-define tree_detail_y = 420
-define tree_shared_y = 372
+define tree_detail_y = 490
+define tree_shared_y = 444
 
 
 # ================================================================ 浮层外壳
@@ -107,7 +114,11 @@ screen overlay_tree():
                     $ _prev = _nodes[_j - 1]
                     $ _linked = (_node["status"] == "unlocked" and _prev["status"] == "unlocked")
                     $ _line_color = track_color(_track) if _linked else c_line_soft
-                    add Solid(_line_color, xysize=(3, tree_row_h - tree_node_h + 2)) xpos (_px + tree_col_w / 2 - 1) ypos (_py - 4)
+                    # 连线画在**两个卡片之间的空隙**里：卡片底边 ypos 是 _py，
+                    # 下一张卡片的顶边是 _py + tree_row_h，所以线要从
+                    # _py + tree_node_h 画到 _py + tree_row_h（各多 1px 压住边缘）。
+                    # 原来写成 ypos (_py - 4)，整条线都藏在卡片底下，一条都看不见。
+                    add Solid(_line_color, xysize=(3, tree_row_h - tree_node_h + 2)) xpos (_px + tree_col_w / 2 - 1) ypos (_py + tree_node_h - 1)
                 use tree_node(_node, _px, _py, tree_col_w - 20, track_color(_track) if _track else c_text_dim)
 
         # ---------------- 共享节点（底部一行）
@@ -130,7 +141,7 @@ screen overlay_tree():
         if selected_node:
             $ _detail = node_detail(selected_node)
             frame:
-                xysize (1240, 134)
+                xysize (1240, 150)
                 xpos 20
                 ypos tree_detail_y
                 background Solid(c_panel_hi)
@@ -180,20 +191,18 @@ screen tree_node(node, px, py, width, color):
         action SetVariable("selected_node", node["id"])
         vbox:
             spacing 1
-            text "[node['name']]" style "t_small" color _name_color
+            # 卡片高 tree_node_h 是按字体度量算死的，所以文字必须在这个宽度内
+            # 剪裁，不能换行撑高（见 theme.rpy 的 tree_node_name / tree_node_meta）。
+            text "[node['name']]" style "tree_node_name" color _name_color xmaximum (width - 14)
             hbox:
                 spacing 4
-                text "[node['stage_name']]" style "t_tiny" color c_text_faint
+                text "[node['stage_name']]" style "tree_node_meta" color c_text_faint
                 if node["status"] == "unlocked":
-                    text "已解锁" style "t_tiny" color c_accent
+                    text "已解锁" style "tree_node_meta" color c_accent
                 elif _available:
-                    text "可解锁" style "t_tiny" color color
+                    text "可解锁" style "tree_node_meta" color color
                 elif node["gates"]:
-                    $ _gkey, _gneed, _ghave = node["gates"][0]
-                    text "[_gkey] [ _ghave ]/[ _gneed ]" style "t_tiny" color c_text_faint
-            if _locked and node["gates"]:
-                for _name, _need, _have in node["gates"][:1]:
-                    text "[_name] [ _have ]/[ _need ]" style "t_tiny" color c_text_faint
+                    text "[fmt_gates(node['gates'][:1])]" style "tree_node_meta" color c_text_faint
 
 
 screen tree_shared_chip(node):
@@ -316,7 +325,11 @@ screen contest_row(row):
 
 screen overlay_hobbies():
 
-    use overlay_shell("爱好", "每投入一次涨 10 点经验，Lv5 会把爱好变成技能树上的正式节点"):
+    use overlay_shell("爱好", "每投入一次涨 %d 点经验，练到 Lv%d 要 %d 次行动" % (
+        C.HOBBY_XP_PER_ACTION,
+        C.HOBBY_MAX_LEVEL,
+        C.HOBBY_LEVEL_THRESHOLDS[C.HOBBY_MAX_LEVEL] // C.HOBBY_XP_PER_ACTION,
+    )):
 
         side "c r":
             xysize (1240, 560)
@@ -371,7 +384,7 @@ screen hobby_card(row):
 
 screen overlay_attrs():
 
-    use overlay_shell("属性", "一局 38 个行动点，能到 40 以上就已经是顶尖水平"):
+    use overlay_shell("属性", "一局 %d 个行动点，能到 %d 以上就已经是顶尖水平" % (C.TOTAL_ACTIONS, C.ATTR_BANDS[-2][0])):
 
         vbox:
             xpos 20

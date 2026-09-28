@@ -265,6 +265,26 @@ init python:
     def attr_band_text(value):
         return C.attr_band(int(value or 0))
 
+    def content_counts():
+        """开场页用的内容规模。
+
+        **必须实算，不能写死。** 这几个数字写死过一次，结果从 16 学期 / 38 行动点
+        改成 8 学期 / 24 行动点之后，开场页还在宣传"十六个学期、三十八个行动点、
+        344 张行动卡" —— 玩家一进游戏看到的就是过期信息。
+        """
+        return "%d 张手写行动卡 ・ %d 张竞赛阶梯 ・ %d 个随机事件" % (
+            len(CM.actions.ALL_CARDS),
+            len(CM.actions.contest_cards()),
+            len(CM.events.EVENT_LIST),
+        )
+
+    def scale_caption():
+        """开场页副标题：四年 / 学期数 / 行动点。同样实算。"""
+        return "四年 ・ %d 个学期 ・ %d 个行动点" % (
+            C.TOTAL_SEMESTERS,
+            C.TOTAL_ACTIONS,
+        )
+
     def track_summary_rows():
         """左栏：六条赛道 + 百分比。"""
         eng = store.engine
