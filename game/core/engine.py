@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import random
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from . import SCHEMA_VERSION
 from . import actions as ACT
@@ -321,8 +321,7 @@ class GameEngine(object):
         if self.state.pending_hook:
             return CardResult(rejected="先把眼前这个抉择处理完")
         if not card_ids:
-            # 空提交不能推进学期：否则会在没抽到抉择时静默跳过整个学期
-            # （曾经因此让大四下的"结果出来了"抉择永远触发不到）。
+            # 空提交不能推进学期：否则会在没抽到抉择时静默跳过整个学期。
             return CardResult(rejected="至少要选一个行动")
         if len(card_ids) > self.state.action_points:
             return CardResult(
@@ -360,7 +359,7 @@ class GameEngine(object):
 
         # 行动点用完 → 自动推进学期；否则让玩家继续投或者主动收尾
         if self.state.action_points <= 0:
-            self.advance(base_flags)
+            self.advance(base_flags, result.played)
             if self.state.finished:
                 result.pending_hook = None
             else:
@@ -401,8 +400,14 @@ class GameEngine(object):
             delta.resources_after = {"fatigue": self.state.fatigue}
             delta.notes.append("剩下的行动点用来睡觉和吃饭了")
             result.deltas.append(delta)
+            # 也记成"投出去的一张卡"：学期结算浮层和结局页的"几个你会记得的
+            # 学期"都是按 result.played / history[*].cards 渲染的，不留这一条的话
+            # "剩下的时间休息"这一学期在复盘里会变成一片空白。
+            result.played.append(
+                PlayedCard(card_id="", name="剩下的时间休息", delta=delta)
+            )
         self.state.action_points = 0
-        self.advance(base_flags)
+        self.advance(base_flags, result.played)
         result.pending_event = self.state.pending_event
         entry = self.state.history[-1] if self.state.history else None
         if entry is not None and entry.get("semester") == result.semester:
@@ -455,8 +460,19 @@ class GameEngine(object):
 
     # ---------------------------------------------------------------- 学期末
 
-    def advance(self, base_flags: set[str] | None = None) -> None:
-        """结束当前学期，推进到下一学期。"""
+    def advance(
+        self,
+        base_flags: set[str] | None = None,
+        played: Sequence[PlayedCard] | None = None,
+    ) -> None:
+        """结束当前学期，推进到下一学期。
+
+        ``played`` 是**刚结束的这个学期**投出去的卡。必须由调用方显式传进来：
+        以前 advance() 读的是 ``self._last_result``，而 play() / finish_semester()
+        都是先调 advance() 再写 ``_last_result`` —— 于是历史里第 N 学期记着第
+        N-1 学期投的卡，结局页的"几个你会记得的学期"整体错位一格
+        （玩家反馈："大四下结束显示的是大三下结束的信息"）。
+        """
         state = self.state
         player = state.player
         if base_flags is None:
@@ -470,7 +486,7 @@ class GameEngine(object):
             "ap_used": CFG.ap_for(semester) - state.action_points,
             "cards": [
                 {"id": pid.card_id, "name": pid.name, "summary": pid.delta.summary()}
-                for pid in (self._last_result.played if self._last_result else [])
+                for pid in (played or ())
             ],
             "attrs": dict(player.attrs),
             "fatigue": state.fatigue,
@@ -638,12 +654,12 @@ class GameEngine(object):
         return STR.HOOKS.get(self.state.pending_hook)
 
     def apply_hook(self, option_id: str) -> CardResult:
-        """结算大四关键抉择。不消耗行动点。
+        """结算一个关键抉择。不消耗行动点。
 
-        如果选项带 ``resolve``，这里会按属性算一次成败：
-        过了就授予该赛道的结局 flag（``kaoyan_admitted`` 等），
-        没过就授予 fallback flag（如 "二战"）。这一步是"属性够了"和
-        "真的上了岸"之间唯一的连接点。
+        抉择**不再做任何成败判定**：以前带 ``resolve`` 的选项会在这里按属性
+        算一次概率，判定入口是大四下那个已经删掉的抉择页。现在从属性到结局
+        是直连的（属性过门槛 + capstone 节点解锁 = 上岸），这里只负责：
+        落属性、记 flag、以及 —— 如果这是定方向那一页 —— 记下玩家选的主线。
         """
         hook = self.pending_hook()
         if hook is None:
@@ -655,62 +671,25 @@ class GameEngine(object):
         delta = EFX.apply_event_option(self.state, option)
         outcome = getattr(option, "desc", "") or ""
 
-        resolve_track = getattr(option, "resolve", "")
-        if resolve_track:
-            # 记住"玩家最后选了哪条路"：结局判定优先用它。否则一个顺手
-            # 把绩点刷高的人，即使最后选了"去查初试成绩"，也会因为保研门槛
-            # 也被满足而被判成保研 —— 最后一次抉择就白选了。
-            self.state.final_choice = resolve_track
-            chance = STR.resolve_chance(
-                self.state.player.attrs,
-                resolve_track,
-                STR_ending_gate(resolve_track),
-            )
-            passed = EFX.roll(self.state.rng, chance)
-            if passed:
-                flag = STR.RESOLVE_FLAGS.get(resolve_track)
-                if flag:
-                    self.state.player.flags.add(flag)
-                outcome = "成了。%s" % (outcome or "这一步走过去了。")
-                delta.notes.append("上岸：%s" % CFG.TRACK_NAMES.get(resolve_track, resolve_track))
-            else:
-                for flag in getattr(option, "fallback_flags", ()) or ():
-                    self.state.player.flags.add(flag)
-                outcome = "差了一点。%s" % (outcome or "你没走到那一步。")
-                delta.notes.append(
-                    "%s 没成（把握 %.0f%%）"
-                    % (CFG.TRACK_NAMES.get(resolve_track, resolve_track), chance * 100)
-                )
+        # 记住"玩家最后选的是哪条路"：结局判定优先用它。否则一个顺手把绩点
+        # 刷高的人，即使一路都在准备就业，也会因为保研门槛也被满足而被判成
+        # 保研 —— 定方向那一步就白选了。
+        #
+        # 只认 DIRECTION_HOOK_ID：大三下（暑假安排）和大四上（主攻方向）的
+        # 选项也带 track，但那些是"这两个月干什么"，不是"我要去哪"。
+        if hook.id == STR.DIRECTION_HOOK_ID:
+            track = getattr(option, "track", "") or ""
+            if track in CFG.TRACKS:
+                self.state.final_choice = track
 
         self.state.pending_hook = None
-        result = CardResult(deltas=[delta], ap_left=self.state.action_points)
+        result = CardResult(
+            deltas=[delta],
+            ap_left=self.state.action_points,
+            semester=self.state.semester,
+            semester_label=CFG.semester_label(self.state.semester),
+        )
         result.message = outcome
-
-        # 只有大四下的收尾抉择（FINAL_HOOK_ID）答完才算这一局结束。
-        # 不能只看 semester：5/6/7 学期的抉择会晚一个学期生效
-        # （第 N 学期的抉择在进入第 N+1 学期时抛出），
-        # 若按学期号判断会把它们误当成结局判定。
-        if hook.id == STR.FINAL_HOOK_ID:
-            self.state.semester = max(self.state.semester, CFG.TOTAL_SEMESTERS)
-            # 大四下的行动点还没花，但这一局已经结束了，所以
-            # 直接在历史里补上最后一条 —— 否则 UI 的学期回顾只到"大三下"。
-            self.state.history.append(
-                {
-                    "semester": self.state.semester,
-                    "label": CFG.semester_label(self.state.semester),
-                    "calendar": self.calendar_label(),
-                    "ap_used": 0,
-                    "cards": [],
-                    "attrs": dict(self.state.player.attrs),
-                    "fatigue": self.state.fatigue,
-                    "penalty": "",
-                    "fatigue_delta": 0,
-                    "notes": [outcome or "最后半年就这样过去了"],
-                    "unlocked": [],
-                    "traits": dict(self.state.player.traits),
-                }
-            )
-            self._finish(self.state)
         return result
 
     # ---------------------------------------------------------------- 竞赛
@@ -885,7 +864,27 @@ class GameEngine(object):
         for sem in range(1, engine.state.semester):
             engine.state.rng.random()
         EFX.reset_fractional()
+        engine._drop_stale_pending()
         return engine
+
+    def _drop_stale_pending(self) -> None:
+        """丢掉指向"已经不存在的抉择 / 事件"的待处理项。
+
+        存档里记的是 id，而内容会随版本改。**只要有一个待处理项指向被删掉的
+        id，这一局就再也走不动了**：pending_hook() 返回 None（查不到），界面
+        以为没事，但 play() 还在看 state.pending_hook 是不是非空 —— 于是每一手
+        都被"先把眼前这个抉择处理完"拒绝，卡死。
+
+        v1.3.2 删掉大四下的「结果陆续出来了」抉择正好造出这个状态：每个学期
+        开头都会自动存档，所以"刚进大四下"的存档里就存着这个已经消失的 id。
+        与其为了它把 SCHEMA_VERSION 抬一档（那会让所有人正在玩的存档直接作废），
+        不如在这里把它清掉 —— 那一局会照常走完大四下然后判结局。
+        """
+        state = self.state
+        if state.pending_hook and state.pending_hook not in STR.HOOKS:
+            state.pending_hook = ""
+        if state.pending_event and state.pending_event not in EVT.EVENTS:
+            state.pending_event = ""
 
 
 def _has(module: Any, name: str) -> bool:
@@ -893,20 +892,18 @@ def _has(module: Any, name: str) -> bool:
 
 
 def STR_ending_gate(track: str) -> dict[str, int]:
-    """取某条赛道用于"上岸判定"的门槛。
+    """取某条赛道"至少要达到什么水平"的门槛，供界面显示。
 
-    只保留判定真正会看的属性（见 RESOLVE_ATTRS），并且每个属性取所有门槛组里
-    **最低**的那一档。
+    每个属性取所有门槛组里**最低**的那一档。
 
     为什么是最低而不是最高：结局判定用的是"任意一组门槛过了就算命中"
-    （endings.evaluate_track）。如果这里取最高，判定就变成"必须同时满足所有
-    路线" —— 保研会被要求 gpa 26 且 research 13 且 english 12，比它最难的单条
-    路线还高一截。实测那会让走保研路线的人 90% 掉进兜底结局。
+    （endings.evaluate_track）。如果这里取最高，显示出来的就变成"必须同时满足
+    所有路线" —— 保研会被写成要 gpa 30 且 research 24 且 english 16，比它最难
+    的单条路线还高一截，玩家会以为自己永远没戏。
 
-    取最低得到的是"至少要达到的水平"：比它低就一定过不了任何一组，
-    正好适合当分子分母。
+    取最低得到的是"至少要达到的水平"：比它低就一定过不了任何一组。UI 用它画
+    「离这条路还差多少」，所以这里只做显示，不参与任何判定。
     """
-    wanted = set(STR.RESOLVE_ATTRS.get(track, ()))
     groups = CFG.ENDING_ALTS.get(track)
     candidates: list[dict[str, int]] = []
     if groups:
@@ -918,8 +915,6 @@ def STR_ending_gate(track: str) -> dict[str, int]:
     out: dict[str, int] = {}
     for gate in candidates:
         for key, need in gate.items():
-            if key not in wanted:
-                continue
             value = int(need)
             if key not in out or value < out[key]:
                 out[key] = value

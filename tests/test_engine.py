@@ -500,17 +500,66 @@ def test_hooks_fire_on_schedule():
     assert labels == [C.semester_label(s) for s in range(1, C.TOTAL_SEMESTERS + 1)]
 
 
-def test_final_hook_actually_decides_the_true_ending():
-    """结局抉择答完之后，结局要和它选的那条路对上。
+def test_a_full_run_plays_all_eight_semesters():
+    """八个学期每个都要真的能玩：历史 8 条，最后一条是大四下，而且它也有牌。
 
-    这是"属性够了 → 真的上岸"之间唯一的连接点：resolve 判定通过才会授予
-    kaoyan_admitted / qiuzhao_offer 之类的 flag，而 ENDING_FLAGS 又要求
-    这些 flag 才能给出对应结局。断了就只剩"走进实验室"。
+    原来第 8 学期挂着一个「结果陆续出来了」的抉择，玩家一进大四下就被弹窗拦下来，
+    答完这一局直接结束 —— 大四下的 2 个行动点永远花不出去，历史里那条记录是
+    手工补的空壳，学期标签还错位（玩家反馈："大四下结束显示的是大三下结束
+    的信息"）。这个抉择页已经删掉了。
     """
-    # 每次走到结局抉择就换一个选项，把 6 条路都试一遍
+    eng = play_full(new_engine(seed=20260101))
+    assert eng.finished
+    assert eng.state.semester == C.TOTAL_SEMESTERS
+    assert len(eng.state.history) == C.TOTAL_SEMESTERS, "历史必须是 8 条"
+
+    labels = [entry["label"] for entry in eng.state.history]
+    assert labels == [C.semester_label(s) for s in range(1, C.TOTAL_SEMESTERS + 1)]
+    assert labels[-1] == C.semester_label(C.TOTAL_SEMESTERS)
+
+    # 大四下必须真的投过牌 —— 它是正常学期，不是"答个抉择就结束"
+    last = eng.state.history[-1]
+    assert last["cards"], "大四下什么都没投，说明它又被某个抉择页拦住了"
+    assert last["ap_used"] == C.ap_for(C.TOTAL_SEMESTERS)
+
+
+def test_history_entry_records_its_own_semester_cards():
+    """第 N 学期的历史条目必须记第 N 学期投的卡，不能串到 N-1 去。
+
+    玩家反馈："大四下结束显示的是大三下结束的信息。"
+    根因是 play() 先调 advance() 再写 self._last_result，而 advance() 在
+    开头读的就是 self._last_result —— 读到的永远是上一个学期。结局页的
+    "几个你会记得的学期"因此整体错位一格。
+    """
+    eng = play_full(new_engine(seed=31337))
+    for entry in eng.state.history:
+        cards = entry.get("cards") or []
+        assert len(cards) == entry.get("ap_used", len(cards)), (
+            "第 %s 学期投了 %s 个行动点，历史里却记了 %d 张卡"
+            % (entry["label"], entry.get("ap_used"), len(cards))
+        )
+
+    # 顺带盯一下复盘：每一行开头的学期标签，必须和它列出的卡片属于同一学期
+    eng2 = play_full(new_engine(seed=31337))
+    for line in eng2.highlights():
+        label = line.split("：", 1)[0]
+        entry = next(e for e in eng2.state.history if e["label"] == label)
+        for name in line.split("：", 1)[1].split("｜")[0].split("、"):
+            assert name in [c["name"] for c in entry["cards"]], (
+                "复盘里「%s」这一行写了不属于它的卡：%s" % (label, name)
+            )
+
+
+def test_ending_follows_the_direction_you_picked():
+    """定方向选的那条路，在同时够得着多条路时优先成为结局。
+
+    属性到结局现在是直连的（没有那个收尾抉择页了），所以"玩家最后选的是哪条路"
+    只剩定方向这一处来源。它要是断了，一个绩点很高的人无论选什么都只能拿保研。
+    """
     endings = set()
-    for pick in range(6):
+    for index in range(len(ENG.STR.HOOKS[ENG.STR.DIRECTION_HOOK_ID].options)):
         eng = new_engine(seed=20260101)
+        picker_used = False
         steps = 0
         while not eng.finished and steps < 400:
             steps += 1
@@ -519,25 +568,29 @@ def test_final_hook_actually_decides_the_true_ending():
                 continue
             hook = eng.pending_hook()
             if hook is not None:
-                index = pick if hook.id == ENG.STR.FINAL_HOOK_ID else 0
-                eng.apply_hook(hook.options[min(index, len(hook.options) - 1)].id)
+                if hook.id == ENG.STR.DIRECTION_HOOK_ID and not picker_used:
+                    picker_used = True
+                    option = hook.options[min(index, len(hook.options) - 1)]
+                    eng.apply_hook(option.id)
+                    assert eng.state.final_choice == (option.track or ""), (
+                        "定方向选了 %s，final_choice 却是 %r"
+                        % (option.id, eng.state.final_choice)
+                    )
+                else:
+                    eng.apply_hook(hook.options[0].id)
                 continue
             cards = eng.semester_cards()
             if not cards:
                 break
             n = min(eng.ap, len(cards))
-            if n <= 0:
+            if n <= 0 or not eng.play([c.id for c in cards[:n]]).ok:
                 break
-            if not eng.play([c.id for c in cards[:n]]).ok:
-                break
-        assert eng.finished, f"第 {pick} 条路没跑完"
-        assert eng.state.semester == C.TOTAL_SEMESTERS
-        assert len(eng.state.history) == C.TOTAL_SEMESTERS, "历史必须是 8 条"
+        assert eng.finished, f"第 {index} 条方向没跑完"
         ending = eng.resolve_ending()
         assert ending.name and ending.narrative
         endings.add(ending.key)
 
-    assert len(endings) >= 2, f"换了 6 个结局选项仍然只有 {endings}，判定太死"
+    assert len(endings) >= 2, f"换了所有方向仍然只有 {endings}，判定太死"
 
 
 def test_ending_flag_matches_the_ending():
@@ -580,22 +633,34 @@ def test_hook_does_not_cost_action_points():
     assert eng.ap == before, "关键抉择不该消耗行动点"
 
 
-def test_resolve_hook_grants_flag_or_fallback():
-    """大四的结果抉择必须要么给结局 flag，要么给 fallback flag。"""
-    from game.core import starts as STR
+def test_every_track_ending_flag_comes_from_its_own_track():
+    """每条赛道的结局 flag 都得由**它自己那条链**上的节点授予。
 
-    fired = 0
-    for seed in range(40):
-        eng = play_full(new_engine(seed=seed))
-        flags = eng.player.flags
-        for flag in STR.RESOLVE_FLAGS.values():
-            if flag in flags:
-                fired += 1
-        # fallback flag 也算数
-        hit_fallback = flags & {"second_attempt", "spring_hunt", "provincial_exam", "gap_year"}
-        if fired or hit_fallback:
-            break
-    assert fired or True, "至少有一次判定发生过（宽松断言，覆盖由 test_balance 保证）"
+    收尾抉择页删掉之后这是唯一的来源。这里逐个赛道点名，避免哪天又把某个
+    节点的 grants_flags 拿掉却没发现（远渡重洋当年就是这样变成 0% 的）。
+
+    注意不限于 capstone：考公那一档是"党员身份"（expert 阶段，大三下就转正），
+    capstone 是"选调资格"，授予的是身份资格而不是 flag。
+    """
+    from game.core import config as C
+    from game.core import skilltree as SKT
+
+    for track in C.TRACKS:
+        needed = set(C.ENDING_FLAGS.get(track, ())) | set(C.ENDING_ANY_FLAGS.get(track, ()))
+        if not needed:
+            continue
+        granted: set[str] = set()
+        for node in SKT.for_track(track):
+            granted.update(node.grants_flags)
+        assert needed & granted, (
+            "%s 这条链上一个结局 flag 都不给：需要 %s，节点给的是 %s"
+            % (track, sorted(needed), sorted(granted))
+        )
+        # 而且不能只靠共享节点 —— 那会让每条赛道都白拿同一个 flag
+        own = {flag for node in SKT.for_track(track) if not node.shared for flag in node.grants_flags}
+        assert needed & own, (
+            "%s 的结局 flag 只由共享节点授予，这条线没有自己的门槛" % track
+        )
 
 
 # ---------------------------------------------------------------- 竞赛

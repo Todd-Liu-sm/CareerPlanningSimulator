@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import pathlib
 from collections import Counter
 
 import pytest
@@ -487,8 +488,6 @@ def test_node_flags_are_granted_somewhere():
     for hook in STR.HOOKS.values():
         for option in hook.options:
             grantable.update(option.flags)
-            if option.resolve:
-                grantable.add(STR.RESOLVE_FLAGS.get(option.resolve, ""))
     for card in ACT.ALL_CARDS:
         grantable.update(card.flags)
     for node in SKT.NODE_LIST:
@@ -652,12 +651,17 @@ def test_prologue_is_wellformed():
 # ================================================================ 关键抉择
 
 
-def test_four_hooks_on_distinct_semesters():
-    assert len(STR.HOOKS) == 4
+def test_hooks_on_distinct_semesters():
+    """抉择不能挤在一起，也不能挂到最后一个学期上。
+
+    原来是 4 个（5/6/7/8），第 8 个是已经删掉的「结果陆续出来了」。
+    """
+    assert len(STR.HOOKS) == 3
     semesters = sorted(hook.semester for hook in STR.HOOKS.values())
-    assert len(set(semesters)) == 4
+    assert len(set(semesters)) == len(STR.HOOKS)
     for hook in STR.HOOKS.values():
-        assert 1 <= hook.semester <= C.TOTAL_SEMESTERS
+        assert 1 <= hook.semester <= STR.HOOK_SEMESTER_MAX
+        assert hook.semester < C.TOTAL_SEMESTERS
         assert len(hook.options) >= 2
         assert hook.title and hook.text
 
@@ -677,23 +681,20 @@ def test_direction_hook_covers_every_track():
     assert len(hook.options) >= len(C.TRACKS)
 
 
-def test_final_hook_exposes_a_resolve_for_every_contest_track():
-    """大四收尾抉择要给每条"要争取"的赛道一个判定入口。
+def test_no_hook_sits_on_the_last_semester():
+    """第 8 学期（大四下）不能挂抉择 —— 它必须是正常可玩的一学期。
 
-    玩家反馈："结果陆续出来了没太看懂，为啥全是需要争取。"
-    现在界面上会显示把握度和判定属性（bridge.hook_view），
-    但前提是这些选项真的带 resolve 字段。
+    原来大四下挂着一个「结果陆续出来了」的抉择，玩家一进大四下就被弹窗拦下来，
+    答完这一局直接结束，那 2 个行动点永远花不出去；而且收尾不走 advance()，
+    历史里要手工补一条空记录，学期标签因此错位（玩家反馈："大四下结束显示的
+    是大三下结束的信息"）。那个抉择页已经按玩家要求删掉了。
+
+    这条测试盯的就是"别再挂回去"：抉择挂在第 N 学期是在第 N-1 学期结束时抛出，
+    所以挂到最后一学期 = 让最后半个学期没法玩。
     """
-    hook = STR.HOOKS[STR.FINAL_HOOK_ID]
-    resolved = {o.resolve for o in hook.options if getattr(o, "resolve", "")}
-    for track in ("kaoyan", "job", "gov", "abroad"):
-        assert track in resolved, "收尾抉择缺少 %s 的判定选项" % track
-    # 每个带 resolve 的选项都要有兜底 flag，否则失败时玩家一无所获
-    for option in hook.options:
-        if getattr(option, "resolve", ""):
-            assert getattr(option, "fallback_flags", ()), (
-                "%s 判定失败时没有兜底 flag" % option.id
-            )
+    on_last = [h.id for h in STR.HOOKS.values() if h.semester >= C.TOTAL_SEMESTERS]
+    assert not on_last, "第 %d 学期不该有抉择，实际有 %s" % (C.TOTAL_SEMESTERS, on_last)
+    assert STR.HOOK_SEMESTER_MAX < C.TOTAL_SEMESTERS
 
 
 def test_hook_options_have_full_consequences():
@@ -718,15 +719,18 @@ def test_hook_options_have_full_consequences():
 
 
 def test_every_track_ending_flag_is_reachable():
-    """每条赛道的结局 flag 都必须有来源，否则那条路永远打不出来。"""
+    """每条赛道的结局 flag 都必须有来源，否则那条路永远打不出来。
+
+    删除大四那个收尾抉择之后，唯一的来源是技能树的 capstone 节点 ——
+    所以这条测试实际上在盯"每条赛道的 capstone 节点有没有授予它自己的 flag"。
+    缺一个，那条赛道就永远打不出来（远渡重洋当年就是这么变成 0% 的）。
+    """
     grantable: set[str] = set()
     for node in SKT.NODE_LIST:
         grantable.update(node.grants_flags)
     for hook in STR.HOOKS.values():
         for option in hook.options:
             grantable.update(option.flags)
-            if option.resolve:
-                grantable.add(STR.RESOLVE_FLAGS.get(option.resolve, ""))
     for card in ACT.ALL_CARDS:
         grantable.update(card.flags)
 
@@ -738,13 +742,36 @@ def test_every_track_ending_flag_is_reachable():
     assert not missing, "这些结局 flag 无人授予：%s" % missing
 
 
-def test_resolve_options_point_at_real_tracks():
+def test_direction_hook_is_the_only_source_of_final_choice():
+    """只有「该定方向了」会写 final_choice。
+
+    大四上那个抉择的选项也带 track，但它问的是"这两个月主攻什么"，
+    拿它覆盖方向会让选科研 / 留学的人被判到别的赛道上去。
+    """
+    engine_source = (
+        pathlib.Path(__file__).resolve().parent.parent / "game" / "core" / "engine.py"
+    ).read_text(encoding="utf-8")
+    assert "STR.DIRECTION_HOOK_ID" in engine_source
+    assert STR.DIRECTION_HOOK_ID in STR.HOOKS
+    # 定方向必须在别的抉择之前，玩家才有"先定方向、再按方向使劲"的节奏
     for hook in STR.HOOKS.values():
-        for option in hook.options:
-            if option.resolve:
-                assert option.resolve in C.TRACKS
-                assert option.resolve in STR.RESOLVE_FLAGS
-                assert option.resolve in STR.RESOLVE_ATTRS
+        if hook.id == STR.DIRECTION_HOOK_ID:
+            continue
+        assert hook.semester >= STR.HOOKS[STR.DIRECTION_HOOK_ID].semester
+
+
+def test_core_has_no_leftover_resolve_machinery():
+    """删页要删干净：不能留下半个 resolve 机制。
+
+    残留的死代码最坏的情况是"看着像还在判定、其实永远不触发" ——
+    竞赛 strengths 那次就是这么埋了一轮才被发现。
+    """
+    for name in ("resolve_chance", "RESOLVE_ATTRS", "RESOLVE_FLAGS", "FINAL_HOOK_ID"):
+        assert not hasattr(STR, name), "starts.%s 应该已经删掉" % name
+    from game.core.starts import HookOption
+
+    assert "resolve" not in HookOption.__dataclass_fields__
+    assert "fallback_flags" not in HookOption.__dataclass_fields__
 
 
 # ================================================================ 模块卫生

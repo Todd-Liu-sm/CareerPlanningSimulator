@@ -209,14 +209,27 @@ def _install_handler():
 
         签名必须是 *args —— 写死零参数会在报错时再抛 TypeError，
         把真正的错误信息埋掉（这个坑踩过一次）。
+
+        **先写一行头部再写 traceback。** 原来只写分隔线 + traceback，
+        而 Ren'Py 有时会用"不是 (etype, value, tb)"的参数调用它 ——
+        结果 errors.log 里攒了一堆只有分隔线的空条目，等于什么都没记到。
+        先把参数 repr 写下来，至少能看出它到底被怎么调的。
         """
         try:
             with open(error_log_path(), "a", encoding="utf-8") as handle:
                 handle.write("\n" + "=" * 70 + "\n")
-                if args:
-                    traceback.print_exception(*args, file=handle)
+                handle.write(
+                    "exception_handler args=%d kinds=%s\n"
+                    % (len(args), [type(a).__name__ for a in args])
+                )
+                if len(args) >= 3 and args[2] is not None:
+                    traceback.print_exception(args[0], args[1], args[2], file=handle)
+                elif args:
+                    for index, item in enumerate(args):
+                        handle.write("  arg[%d] = %r\n" % (index, item))
                 else:
-                    traceback.print_exc(file=handle)
+                    handle.write("  （没有参数）\n")
+                handle.flush()
         except Exception:
             pass
         return None

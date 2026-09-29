@@ -40,7 +40,7 @@ define tree_shared_y = 444
 
 screen overlay_shell(title, subtitle):
 
-    modal True
+    modal (not relax_modal)   # 见 bridge.rpy 的 relax_modal 说明
     add Solid("#000000DD")
 
     frame:

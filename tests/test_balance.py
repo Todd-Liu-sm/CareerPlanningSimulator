@@ -217,12 +217,42 @@ def test_you_cannot_have_everything(sweep):
         assert avg <= 1.5, (
             "纯随机打法平均命中 %.2f 条赛道 —— 门槛太低，乱点也能多线通吃" % avg
         )
-        assert max(counts) <= 2, (
+        assert max(counts) <= 3, (
             "纯随机打法一次命中了 %d 条赛道，太多了" % max(counts)
         )
 
 
+def test_a_focused_build_is_qualified_for_at_most_three_tracks():
+    """**专精一条线不能顺手把其它几条线也点亮。**
 
+    这是 `test_you_cannot_have_everything` 的加强版，针对的是删除那个收尾抉择页
+    之后的副作用：判定旗标从"大四那次概率判定"改成"技能树 capstone 节点"之后，
+    它不再过滤任何东西 —— 一个把绩点、英语、科研都顶满的保研玩家会**同时**够得着
+    推免 / 留学 / 科研三条线。
+
+    为什么上限是 3 而不是 1：保研的门槛（绩点 30 ・ 科研 18 ・ 外语 16）在属性上
+    真的蕴含了留学（外语 32 ・ 绩点 14）和科研（科研 32）—— 现实里一个绩点 35、
+    英语 36、科研 36 的人也确实三条路都能走。真正要守住的是：
+      * 不可能同时够到 4 条以上（那才叫"什么都想要还都要到了"）；
+      * 保研 / 考研 / 考公 这三条互相冲突的应试线不能同时成立。
+    结局页现在也分开写「你走通的路」和「属性上也够得着、但没走的路」。
+    """
+    worst = 0
+    for name, primary, secondary, wanted in SIM.STRATEGIES:
+        for seed in (9001, 9002, 9003):
+            eng = SIM.play_one(seed, (name, primary, secondary, wanted), "cs", "normal")
+            keys = [c.key for c in END.candidates(eng.player, eng.state)]
+            worst = max(worst, len(keys))
+            assert len(keys) <= 3, "「%s」打法一次够到了 %d 条线：%s" % (name, len(keys), keys)
+            conflict = {"baoyan", "kaoyan", "gov"} & set(keys)
+            assert len(conflict) <= 1, (
+                "「%s」打法同时够到了互相冲突的 %s —— 这三条线的属性不重合，"
+                "同时成立说明门槛又低了" % (name, sorted(conflict))
+            )
+    assert worst >= 1, "连专精打法都够不到任何一条线，门槛反过来太高了"
+
+
+def test_gate_attributes_never_saturate(sweep):
     """**结局门槛引用到的属性**不能在绝大多数局里都顶到硬顶。
 
     为什么只盯这几个：门槛属性一旦人人满值，赛道之间就没有取舍了 ——
@@ -232,6 +262,10 @@ def test_you_cannot_have_everything(sweep):
 
     这条断言真的抓过 bug：卡池加深之前，每个属性的最高 8 张卡之和只有
     11-17 点，而门槛要 20-26 点 —— **所有专精玩法都过不了任何一条结局**。
+
+    又及：这个 def 行一度被删掉，函数体整个并进了上一个测试 —— 断言还在跑，
+    但失败时报的是"既要又要"的名字，排查方向会被带偏。加回 def 行时补了
+    这条注释，别再让它消失。
     """
     gate_attrs = set()
     for gate in C.ENDING_GATES.values():

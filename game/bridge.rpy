@@ -41,6 +41,18 @@ default event_result = None
 default hook_result = None
 default unlock_notice = []
 
+# 自检专用：把模态浮层降级成非模态。
+#
+# **为什么需要这个**：`modal True` 的屏幕显示着的时候，`renpy.pause()` 会一直
+# 等下去（等那个没人点的 Return），于是自检卡死在截图那一步 —— 无报错、无截图、
+# 进程不退，测试工具只看"没有 FAILED 行"还会报"全部通过"。
+# 结果是结算浮层和两个抉择/事件浮层**从来没有被拍出来过**，玩家反馈的
+# "大四下结束显示的是大三下结束的信息"就一直没人看见。
+#
+# 真实游戏里这个值永远是 False（模态是必要的：结算浮层必须挡住下面的卡）。
+# 只有 label selfcheck 会把它设成 True。
+default relax_modal = False
+
 # 界面导航
 default active_overlay = ""
 default selected_node = ""
@@ -147,6 +159,13 @@ init python:
         result = eng.play(list(store.pending))
         if not result.ok:
             store.toast = result.rejected or "这一步走不通"
+            # **被拒绝时必须把上一次的结算清掉。**
+            # 提交按钮的 action 是 [Function(commit_semester), Return("committed")]，
+            # 无论提交成不成功都会 return；script.rpy 那边只看 _action，
+            # 拿到的是 store.semester_result。这里不清空的话，界面会把**上上
+            # 个学期**的结算浮层再弹一遍（玩家看到的就是"大四下结束显示的是
+            # 大三下结束的信息"）。
+            store.semester_result = None
             return None
         store.pending = []
         store.semester_result = result
@@ -159,6 +178,10 @@ init python:
             return None
         result = eng.finish_semester()
         store.pending = []
+        if not result.ok:
+            store.toast = result.rejected or "这一步走不通"
+            store.semester_result = None
+            return None
         store.semester_result = result
         _collect_unlocks(result)
         return result
@@ -407,55 +430,35 @@ init python:
     def hook_view(hook):
         """把关键抉择包装成界面能直接渲染的行。
 
-        为什么要包一层：带 ``resolve`` 的选项需要显示**成功率**和**判定属性**
-        —— 玩家反馈"结果陆续出来了没太看懂，为啥全是需要争取，而且只 +3 心态"。
-        原来界面上只有一个干巴巴的"需要真的去争取"，玩家根本不知道
-        这一手按下去了算的是什么、自己有几成把握。
+        抉择**不再做成败判定**：原来带 resolve 的选项会显示「把握 62%」和
+        「判定：公考应试 21/30」，判定入口是大四下那个抉择页；那一页已经按
+        玩家要求删掉了，属性到结局现在是直连的。所以这里只保留"这条选项倾向
+        哪条赛道"和它给的属性/疲劳 —— 结果完全由属性决定，看得见就够了。
         """
         if hook is None:
             return None
-        eng = store.engine
-        is_final = getattr(hook, "id", "") == CM.starts.FINAL_HOOK_ID
         rows = []
         for option in hook.options:
-            track = getattr(option, "resolve", "") or ""
-            row = {
-                "id": option.id,
-                "text": option.text,
-                "desc": getattr(option, "desc", "") or "",
-                "effects": fmt_gain_dict(getattr(option, "effects", None) or {}),
-                "fatigue": int((getattr(option, "resources", None) or {}).get("fatigue", 0)),
-                "track": getattr(option, "track", "") or "",
-                "track_name": C.TRACK_NAMES.get(getattr(option, "track", ""), ""),
-                "resolve": track,
-                "resolve_name": C.TRACK_NAMES.get(track, ""),
-                "chance": 0.0,
-                "chance_text": "",
-                "need_text": "",
-                "is_final": is_final,
-            }
-            if track and eng is not None:
-                gate = _ending_gate(track)
-                chance = CM.starts.resolve_chance(eng.player.attrs, track, gate)
-                row["chance"] = chance
-                row["chance_text"] = "把握 %d%%" % round(chance * 100)
-                row["need_text"] = " ・ ".join(
-                    "%s %d/%d" % (C.ATTR_SHORT.get(k, k), eng.player.attrs.get(k, 0), v)
-                    for k, v in gate.items()
-                )
-                row["ready"] = chance >= 0.999
-            rows.append(row)
+            track = getattr(option, "track", "") or ""
+            rows.append(
+                {
+                    "id": option.id,
+                    "text": option.text,
+                    "desc": getattr(option, "desc", "") or "",
+                    "effects": fmt_gain_dict(getattr(option, "effects", None) or {}),
+                    "fatigue": int((getattr(option, "resources", None) or {}).get("fatigue", 0)),
+                    "track": track,
+                    "track_name": C.TRACK_NAMES.get(track, ""),
+                    "is_direction": getattr(hook, "id", "") == CM.starts.DIRECTION_HOOK_ID,
+                }
+            )
         return {
             "id": hook.id,
             "title": hook.title,
             "text": hook.text,
             "options": rows,
-            "is_final": is_final,
+            "is_direction": getattr(hook, "id", "") == CM.starts.DIRECTION_HOOK_ID,
         }
-
-    def _ending_gate(track):
-        """取某条赛道用于"上岸判定"的门槛（和引擎里用的是同一个函数）。"""
-        return CM.engine.STR_ending_gate(track)
 
     def visible_cards():
         """本学期可见卡，附上"投一次会涨什么"和"已经投过几次"。"""
@@ -629,3 +632,59 @@ init python:
             "highlights": ending.highlights,
             "overall": overall_progress_row(),
         }
+
+    # ---------------------------------------------------------------- 自检
+
+    def selfcheck_full_run(seed=20260101, start_id="ace", major_id="cs"):
+        """在**另一个引擎**上从头打完一局，返回一组数据断言的结果。
+
+        为什么不拿 store.engine 查这些：自检前面已经手工把它的学期拨到 9、
+        伪造过 history，那些状态不是真实玩出来的 —— 拿它算"学期标签对不对"
+        只会得到一堆吓人的假警报（"学期历史=1 条，标签正确：False"）。
+        这里开一个一次性的引擎，按真实流程走完八个学期，只看它。
+
+        用第二个引擎也顺带验证了"同一进程里能同时存在两局、互不干扰"。
+        """
+        report = {}
+        probe = CM.engine.create(seed=seed)
+        probe.begin(start_id, major_id, "opt_summer_study", "opt_goal_deep")
+
+        guard = 0
+        while not probe.finished and guard < 400:
+            guard += 1
+            if probe.pending_event() is not None:
+                probe.apply_event(0)
+                continue
+            if probe.pending_hook() is not None:
+                probe.apply_hook(probe.pending_hook().options[0].id)
+                continue
+            cards = probe.semester_cards()
+            if not cards:
+                probe.finish_semester()
+                continue
+            if not probe.play([c.id for c in cards[: probe.ap]]).ok:
+                break
+        report["跑完"] = probe.finished
+        report["跑到第几学期"] = probe.state.semester
+
+        history = probe.semester_history()
+        report["历史条数"] = len(history)
+        report["标签正确"] = [e["label"] for e in history] == [
+            C.semester_label(s) for s in range(1, C.TOTAL_SEMESTERS + 1)
+        ]
+        report["最后一条"] = history[-1]["label"] if history else "（空）"
+        report["最后一条投了几张"] = len(history[-1].get("cards") or ()) if history else 0
+        report["卡片与行动点对不上的学期"] = [
+            (e["label"], e.get("ap_used"), len(e.get("cards") or ()))
+            for e in history
+            if len(e.get("cards") or ()) != e.get("ap_used")
+        ]
+        # 复盘里每一行开头的学期，必须真的在历史里存在
+        labels = {e["label"] for e in history}
+        report["复盘对不上的行"] = [
+            line for line in probe.highlights() if line.partition("：")[0] not in labels
+        ]
+        report["结局"] = probe.resolve_ending().name
+        # 抉择页只剩定方向 / 暑假安排 / 大四上主攻，最后半学期必须是空出来玩的
+        report["抉择挂在第几学期"] = sorted(h.semester for h in CM.starts.HOOKS.values())
+        return report

@@ -56,13 +56,13 @@ def main() -> int:
     print()
 
     print("【各学期结局 flag 的授予时机】")
-    grant_flags = set(STR.RESOLVE_FLAGS.values()) | {"tuimian_qualified", "paper_published", "direct_phd_intent"}
-    found = {flag: None for flag in grant_flags}
-    running: set[str] = set()
-    for entry in eng.state.history:
-        for per_card in entry.get("cards", ()):
-            pass
-    # 历史里没记 flags，只能看最终集合与节点解锁
+    # 收尾抉择页删掉之后，这些 flag 全部由技能树节点授予（见 core/skilltree.py
+    # 的各赛道 capstone）。这里只看最终拿到了哪些、缺哪些。
+    grant_flags = set()
+    for flags in CFG.ENDING_FLAGS.values():
+        grant_flags.update(flags)
+    grant_flags.update(CFG.ENDING_ANY_FLAGS.get("research", ()))
+    grant_flags |= {"tuimian_qualified", "lab_member"}
     for flag in sorted(eng.player.flags & grant_flags):
         print("   %s 已获得" % flag)
     for flag in sorted(grant_flags - eng.player.flags):

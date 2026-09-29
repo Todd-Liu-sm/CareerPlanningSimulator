@@ -245,7 +245,7 @@ screen prologue_screen(question):
 
 screen settings_screen():
 
-    modal True
+    modal (not relax_modal)   # 见 bridge.rpy 的 relax_modal 说明
     add Solid("#000000CC")
 
     frame:
@@ -338,15 +338,23 @@ screen ending_screen():
                     padding (30, 20)
                     vbox:
                         spacing 8
-                        text "你走通的路" style "t_head"
                         if _ending.candidates:
-                            for _cand in _ending.candidates:
-                                hbox:
-                                    spacing 12
-                                    text "[ _cand.name ]" style "t_body" color c_accent xsize 120
-                                    text "[ _cand.gate_name ]" style "t_tiny" color c_text_faint yalign 0.5
-                                    text "[fmt_attr_map(_cand.matched)]" style "t_tiny" color c_text_faint
+                            # candidates[0] 就是这一局的结局（它在 endings.candidates()
+                            # 里被排到第一位），后面几条是"属性上也够得着、但没走"的路。
+                            #
+                            # 两者必须分开写：结局判定删掉那个收尾抉择页之后是纯
+                            # 属性直连的，一个把绩点、英语、科研都顶满的人确实同时
+                            # 够得着推免 / 留学 / 科研三条线。把这写成"你走通的路"
+                            # 会让玩家以为自己一口气走了三条路 —— 其实他只走了一条。
+                            text "你走通的路" style "t_head"
+                            use ending_candidate_row(_ending.candidates[0], True)
+                            if len(_ending.candidates) > 1:
+                                null height 4
+                                text "属性上也够得着、但没走的路" style "t_head"
+                                for _cand in _ending.candidates[1:]:
+                                    use ending_candidate_row(_cand, False)
                         else:
+                            text "你走通的路" style "t_head"
                             text "没有走上任何一条既定的路。这也是很多人真实的样子。" style "t_small" color c_text_dim
 
                 # ---------------- 属性雷达（用横向条代替多边形，中文更清楚）
@@ -424,3 +432,22 @@ screen ending_screen():
         vbar:
             value YScrollValue("ending")
             xsize 8
+
+
+# 结局页的一行"够得着的路"。
+#
+# primary=True 的那一行就是这一局的结局（endings.candidates() 把 final_choice
+# 排在最前），画成强调色 + 箭头；其余几行是"属性上也够得着、但没走"的路，
+# 画淡一点。这两类必须分开：删掉收尾抉择页之后判定是纯属性直连的，
+# 一个把绩点/英语/科研都顶满的人确实同时够得着三条线。
+screen ending_candidate_row(cand, primary):
+
+    hbox:
+        spacing 12
+        if primary:
+            text "▶" style "t_tiny" color c_accent yalign 0.5
+        else:
+            text "・" style "t_tiny" color c_text_faint yalign 0.5
+        text "[ cand.name ]" style "t_body" color (c_accent if primary else c_text_dim) xsize 120
+        text "[ cand.gate_name ]" style "t_tiny" color c_text_faint yalign 0.5
+        text "[fmt_attr_map(cand.matched)]" style "t_tiny" color c_text_faint

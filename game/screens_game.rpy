@@ -425,11 +425,18 @@ screen card_category(group):
 
 screen semester_summary(result):
 
-    modal True
+    # modal 是为了挡住下面的行动卡（结算期间不能继续点）。relax_modal 只在
+    # 自检里为 True —— 见 bridge.rpy 的说明：模态屏幕显示着的时候
+    # renpy.pause() 会永远等下去，截图根本拍不到这一屏。
+    modal (not relax_modal)
     add Solid("#000000AA")
 
     frame:
-        xysize (780, 668)
+        # 高度按"一学期最多投几张卡"来定，不写死一个大数：
+        # 一学期最多 4 个行动点（AP_BY_SEMESTER 的最大值），所以卡片区撑到
+        # 4 行就够，多出来的滚动。之前写的是 668，只有 4 张卡时中间会空掉
+        # 一大片 —— 这一屏过去因为模态卡死从没被拍到过，所以一直没人看见。
+        xysize (780, 520)
         xalign 0.5
         yalign 0.5
         background Solid(c_panel)
@@ -446,7 +453,7 @@ screen semester_summary(result):
             text "[result.semester_label] 结束了" style "t_title"
 
             side "c r":
-                xysize (732, 340)
+                xysize (732, 264)
                 spacing 6
 
                 viewport id "summary":
@@ -540,15 +547,17 @@ screen played_row(played):
 
 screen event_popup(event):
 
-    modal True
+    modal (not relax_modal)   # 见 bridge.rpy 的 relax_modal 说明
     add Solid("#000000BB")
 
     frame:
-        xfill True
+        # 宽度和抉择浮层对齐（1200）：两张浮层长得不一样会显得是两套界面。
+        # 高度仍然随内容自适应 —— 事件最多 3 个选项，撑不出屏幕。
+        xsize 1200
         xalign 0.5
         yalign 0.5
         background Solid(c_panel)
-        padding (26, 22)
+        padding (24, 18)
 
         vbox:
             spacing 13
@@ -587,75 +596,103 @@ screen event_popup(event):
 
 screen hook_popup(hook):
 
-    # hook_view 把 Hook 包成可直接渲染的行：带 resolve 的选项会带上
-    # 成功率、判定属性和"这一手决定结局"的标注。
-    $ _hv = hook_view(hook)
-
-    modal True
+    # 注意顺序：Ren'Py 不允许"非字面量的关键字参数"出现在 python 块之后，
+    # 所以 modal 必须写在 `$ _hv = ...` 前面（写成 modal True 就不会报，
+    # 但那样自检又拍不到这一屏了）。
+    modal (not relax_modal)   # 见 bridge.rpy 的 relax_modal 说明
     add Solid("#000000CC")
 
+    # hook_view 把 Hook 包成可直接渲染的行：选项带「倾向 X 赛道」的标注，
+    # 以及它给的属性和疲劳。抉择本身不再做成败判定（大四下那个判定页已删除）。
+    $ _hv = hook_view(hook)
+
+    # **高度写死 1200x676，选项放进可滚动的 viewport。**
+    #
+    # 原来是 xfill True + yalign 0.5（高度随内容自适应），定方向那一屏有 7 个选项、
+    # 每个 3 行，整块比 720 还高 —— 结果标题和第一段说明被顶到屏幕外面去了。
+    # 这一屏过去因为模态卡死从来没被截图验证过，所以一直没人发现
+    # （玩家只说过"定方向应该显示全"，那说的是选项要覆盖六条赛道，不是排版）。
     frame:
-        xfill True
+        xysize (1200, 690)
         xalign 0.5
         yalign 0.5
         background Solid(c_panel)
-        padding (28, 24)
+        padding (24, 18)
 
         vbox:
-            spacing 13
+            spacing 10
 
             text "关键抉择" style "t_tiny" color c_danger
             text "[_hv['title']]" style "t_title"
             text "[_hv['text']]" style "t_body" color c_text_dim
 
-            if _hv['is_final']:
-                # 这一屏不是普通的选项 —— 它直接决定这一局的结局。
+            if _hv['is_direction']:
+                # 定方向是全游戏唯一一次"选主线"：它决定结局判定把哪条路
+                # 排在最前面，所以必须说清楚。
                 frame:
                     xfill True
                     background Solid(c_bg_deep)
-                    padding (12, 8)
-                    text "这是最后一次判定：下面带「把握」的选项会按你的属性算一次成败，过了才算真的上岸。只能选一个。" style "t_small" color c_gold
+                    padding (12, 7)
+                    text "这是你给自己定的主线：四年结束时如果它和别的路同时达标，算你走的这条。只能选一个。" style "t_small" color c_gold
 
-            null height 4
+            side "c r":
+                xysize (1152, 470)
+                spacing 4
 
-            for option in _hv['options']:
-                button:
-                    xfill True
-                    background Solid(c_panel_hi)
-                    hover_background Solid(c_hover_bg)
-                    padding (14, 11)
-                    action Return(option['id'])
+                viewport id "hookopts":
+                    mousewheel True
+                    draggable True
+                    xsize 1136
+
                     vbox:
-                        spacing 4
+                        spacing 6
+                        for option in _hv['options']:
+                            use hook_option(option)
+
+                vbar:
+                    value YScrollValue("hookopts")
+                    xsize 8
+
+
+# 抉择的一个选项。两行：上面一行是"选项名 + 倾向赛道 + 代价"，下面是说明。
+# 原来的三行（说明单独占一行、属性再占一行）在定方向那 7 个选项时会把整块撑出屏幕。
+screen hook_option(option):
+
+    button:
+        xfill True
+        background Solid(c_panel_hi)
+        hover_background Solid(c_hover_bg)
+        padding (14, 6)
+        action Return(option['id'])
+
+        vbox:
+            spacing 3
+
+            hbox:
+                xfill True
+                spacing 8
+                text "[option['text']]" style "t_body"
+                if option['track_name']:
+                    text "倾向 [option['track_name']]" style "t_tiny" color c_text_faint yalign 0.5
+
+                hbox:
+                    xalign 1.0
+                    spacing 12
+                    yalign 0.5
+                    for name, value, color in option['effects']:
                         hbox:
-                            spacing 8
-                            text "[option['text']]" style "t_body"
-                            if option['resolve']:
-                                if option['ready']:
-                                    text "[option['chance_text']]" style "t_tiny" color c_accent yalign 0.5
-                                else:
-                                    text "[option['chance_text']]" style "t_tiny" color c_gold yalign 0.5
-                                text "决定 [option['resolve_name']] 结局" style "t_tiny" color c_text_faint yalign 0.5
-                            elif option['track_name']:
-                                text "倾向 [option['track_name']]" style "t_tiny" color c_text_faint yalign 0.5
-                        text "[option['desc']]" style "t_tiny" color c_text_faint
-                        # 判定属性：让玩家看见"这一把算的是什么"
-                        if option['need_text']:
-                            text "判定：[option['need_text']]" style "t_tiny" color c_text_faint
-                        hbox:
-                            spacing 12
-                            for name, value, color in option['effects']:
-                                hbox:
-                                    spacing 3
-                                    text "[name]" style "t_tiny" color c_text_faint
-                                    if value > 0:
-                                        text "+[value]" style "t_tiny" color color
-                                    else:
-                                        text "[value]" style "t_tiny" color color
-                            if option['fatigue'] > 0:
-                                text "疲劳 +[option['fatigue']]" style "t_tiny" color c_danger
-                            elif option['fatigue'] < 0:
-                                text "疲劳 [option['fatigue']]" style "t_tiny" color c_up
+                            spacing 3
+                            text "[name]" style "t_tiny" color c_text_faint
+                            if value > 0:
+                                text "+[value]" style "t_tiny" color color
+                            else:
+                                text "[value]" style "t_tiny" color color
+                    if option['fatigue'] > 0:
+                        text "疲劳 +[option['fatigue']]" style "t_tiny" color c_danger
+                    elif option['fatigue'] < 0:
+                        text "疲劳 [option['fatigue']]" style "t_tiny" color c_up
+
+            text "[option['desc']]" style "t_tiny" color c_text_faint
 
 
 # ================================================================ 按钮样式

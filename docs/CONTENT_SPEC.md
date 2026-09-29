@@ -441,17 +441,19 @@ START_LIST: tuple[StartLine, ...] = ()   # 恰好 5 个，id: ace cadrescholar a
 STARTS: dict[str, StartLine] = {}
 def get(start_id: str) -> StartLine: ...
 PROLOGUE: tuple[PrologueChoice, ...] = ()   # 恰好 2 个问题，每个 3 个选项
-HOOKS: dict[str, Hook] = {}                  # 恰好 4 个，semester 分别 5/6/7/8
-FINAL_HOOK_ID = "k_sem8_result"              # 答完它就代表这一局结束
+HOOKS: dict[str, Hook] = {}                  # 恰好 3 个，semester 分别 5/6/7
+DIRECTION_HOOK_ID = "k_sem5_direction"       # 只有它会写 state.final_choice
+HOOK_SEMESTER_MAX = TOTAL_SEMESTERS - 1      # 抉择不能挂到最后一学期
 def hooks_for_semester(sem: int) -> list[Hook]: ...
 ```
 
 **5 条起步线**：`ace` 竞赛大佬 / `cadre` 干部苗子 / `scholar` 小镇做题家 / `artisan` 文艺特长 / `normal` 标准新生。
 
-**4 个关键抉择**：学期号必须是 **5 / 6 / 7 / 8**（互不重复，且不能是第 1 学期）。
-第 8 学期那个的 id 必须等于 `FINAL_HOOK_ID`，它的选项里前四个带 `resolve`
-（`kaoyan` / `job` / `gov` / `abroad`），引擎会按属性算一次成败判定并授予结局 flag。
-`_validate()` 会检查"最后一个学期有且只有这一个抉择"。
+**3 个关键抉择**：学期号必须是 **5 / 6 / 7**（互不重复，且不能是第 1 学期）。
+`_validate()` 会检查"第 8 学期没有抉择"—— 抉择挂在第 N 学期是在第 N-1 学期结束时
+抛出的，挂到最后一学期就等于让大四下没法玩（原来那个「结果陆续出来了」就是这么坏的，
+已整页删除）。`HookOption` 上的 `resolve` / `resolve_gate` / `fallback_flags`
+字段也一并移除。
 
 `resources` 里**只能出现 `fatigue`**（经济已移除）。
 
@@ -472,11 +474,15 @@ def highlights(state) -> list[str]: ...
 `evaluate` 必须返回**所有**命中的候选（`candidates`），主结局取排序后的第一个；
 一个都不命中就返回 `slow` 结局，并按 `config.SLOW_GOOD_MIND_GATE` 分成「重新出发」/「需要停一停」。
 
-**排序规则（顺序不能改）**：先按 `state.final_choice`（玩家在大四收尾抉择里选的那条路）
-降权，再按 `ENDING_PRIORITY`。没有第一条的话，一个顺手把绩点刷高的人无论最后选什么都
-只能拿到保研结局 —— 最后一次抉择就白选了。
+**排序规则（顺序不能改）**：先按 `state.final_choice`（玩家在大三上「该定方向了」选的
+那条路）降权，再按 `ENDING_PRIORITY`。没有第一条的话，一个顺手把绩点刷高的人无论最后选什么都
+只能拿到保研结局 —— 定方向那一步就白选了。
 标签从属性与 flag 里推（如「论文选手」「身体是本钱」「早起鸟」「社团扛把子」「临门一脚」），**3–5 个**。
 `highlights` 从 `state.history` 里挑 5 条最关键的记录。
+
+**`candidates` 可能返回多条**：判定是纯属性直连的，一个把绩点/英语/科研都顶满的人
+确实同时够得着推免 / 留学 / 科研。所以界面必须把 `candidates[0]`（= 这一局的结局）
+和其余的"够得着但没走"分开渲染，不能一律写成"你走通的路"。
 
 ---
 
@@ -493,7 +499,13 @@ def highlights(state) -> list[str]: ...
 - [ ] 中文文案长度合理（卡名 ≤8 字，描述 ≤60 字）
 - [ ] 每个属性的"最好的 8 张卡之和" >= 32（否则有赛道永远过不了门槛）
 - [ ] 节点 `after_semester` 全部 < 8，且节点门槛低于对应的结局门槛
-- [ ] 结局 flag 里只有 `tuimian_qualified` 由节点授予，其余留给大四收尾抉择
+- [ ] 每个赛道的结局 flag 都由**它自己那条链**上的节点授予
+      （`test_every_track_ending_flag_comes_from_its_own_track`）
+- [ ] 第 8 学期没有抉择（`test_no_hook_sits_on_the_last_semester`）
+- [ ] 专精一条线最多同时够到 3 条赛道，且保研/考研/考公不能同时成立
+      （`test_a_focused_build_is_qualified_for_at_most_three_tracks`）
+- [ ] `advance()` 收到的是**调用方传进来的** played，不是 `self._last_result`
+      （`test_history_entry_records_its_own_semester_cards`）
 
 最后一件事：跑一遍
 

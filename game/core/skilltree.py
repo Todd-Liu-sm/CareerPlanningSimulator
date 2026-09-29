@@ -90,11 +90,17 @@ NODE_LIST: tuple[SkillNode, ...] = (
        effect_attrs=("research",)),
     _n("n_baoyan_tuimian", "baoyan", "capstone", "推免资格",
        "拿到本校推免名额，之前所有努力才真正生效。",
-       # 三条属性都要，但门槛要低于 ENDING_ALTS 里的 22/13/12 ——
-       # 节点是"报名资格"，结局门槛才是"真的上岸"。原本写成 18/11/11，
-       # 实测走保研路线的人 90% 拿不到这个 flag，直接掉进兜底结局。
+       # 三条属性都要，但门槛要低于 ENDING_GATES 里的 30/18/16 ——
+       # 节点是"报名资格"，结局门槛才是"真的上岸"。
+       #
+       # **research 这一条不能低。** 原本是 16/8/10，而删除大四那个收尾抉择页
+       # 之后，这个 flag 成了"推免上岸"结局唯一的开关；门槛太低的话，一个
+       # 考研玩家（绩点高、英语高、科研只要 14）顺手就把推免资格也拿了 ——
+       # 实测「考研」打法 100% 同时够到保研和留学，结局页一次列三条路。
+       # 保研和考研在属性上的真正差别就是科研，所以门槛卡在科研 16：
+       # 保研打法中位科研 36，考研打法中位科研 14，正好分开。
        requires=("n_baoyan_research",),
-       gates={"gpa": 16, "research": 8, "english": 10},
+       gates={"gpa": 20, "research": 16, "english": 14},
        grants_flags=("tuimian_qualified",), grants={"gpa": 2}, after=6),
 
     # ---------------- 考研 ----------------
@@ -164,8 +170,13 @@ NODE_LIST: tuple[SkillNode, ...] = (
        grants={"portfolio": 2, "english": 1}, after=5),
     _n("n_abroad_offer", "abroad", "capstone", "录取通知",
        "投出去、等回信、比较 offer，然后决定去哪。",
+       # 这个节点以前是**不授予** abroad_offer 的：那时 flag 只能靠大四下
+       # 那个抉择的 resolve 判定拿到，而判定的分子分母是结局门槛 english 32，
+       # 走留学路线的人 90% 判不过，实测"远渡重洋"结局是 0%。
+       # 那个抉择页删掉之后，capstone 节点重新成为这条赛道 flag 的唯一来源 ——
+       # 这也更说得通：节点本身就是"你收到录取通知了"。
        requires=("n_abroad_docs",), gates={"english": 20, "gpa": 11},
-       after=7),
+       grants_flags=("abroad_offer",), after=7),
 
     # ---------------- 科研深造 ----------------
     _n("n_research_join", "research", "baseline", "进组",

@@ -140,6 +140,34 @@ def test_save_schema_mismatch_is_rejected():
         ENG.GameEngine.deserialize(data)
 
 
+def test_save_referencing_a_deleted_hook_does_not_deadlock():
+    """存档里指向"已经被删掉的抉择"时必须自动清掉，而不是把这一局卡死。
+
+    v1.3.2 删掉了大四下的「结果陆续出来了」抉择。每个学期开头都会自动存档，
+    所以"刚进大四下"那个存档里就存着这个已经消失的 id：pending_hook() 查不到
+    东西会返回 None（界面以为没事），但 play() 看的是 state.pending_hook 是否
+    非空 —— 每一手都会被"先把眼前这个抉择处理完"拒绝，玩家再也走不动。
+
+    这里手工造出那个状态，验证读档后能继续玩到底。
+    """
+    eng = _played()
+    data = eng.serialize()
+    data["pending_hook"] = "k_sem8_result"          # 已经被删掉的抉择 id
+    data["pending_event"] = "e_this_event_is_gone"  # 顺便验证事件也一样
+
+    clone = ENG.GameEngine.deserialize(data)
+    assert not clone.state.pending_hook
+    assert not clone.state.pending_event
+    assert clone.pending_hook() is None
+    assert clone.pending_event() is None
+
+    # 真的能接着玩：这一手不能被"先把眼前这个抉择处理完"挡住
+    cards = clone.semester_cards()
+    assert cards
+    result = clone.play([c.id for c in cards[: clone.ap]])
+    assert result.ok, "读档后被拒绝：%s" % result.rejected
+
+
 def test_finished_game_roundtrip():
     """打完的一局也要能存能读（结局页会有存档操作）。"""
     eng = _played(semester=1)

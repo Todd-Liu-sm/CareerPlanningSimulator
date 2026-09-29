@@ -46,10 +46,14 @@ class PrologueChoice:
 class HookOption:
     """关键抉择的一个选项。
 
-    ``resolve`` 是给"这一局的结果"用的：填一条赛道的 key，引擎会在选项结算时
-    按属性算一次成败，成功就授予那条赛道的结局 flag。这是把"属性够了"变成
-    "真的上了岸"的那一步 —— 没有它，结局判定会缺少必需的 flag，
-    整条赛道永远打不出来。
+    ``track`` 是这条选项指向的赛道。它只做两件事：界面上标一句"倾向 X"，
+    以及 —— 当这个抉择是 ``DIRECTION_HOOK_ID``（定方向）时 —— 记下玩家
+    选的主线，结局判定会把它排在候选的第一位。
+
+    **这里不再有 resolve 判定。** 原来"属性够了"和"真的上了岸"之间隔着
+    一次概率判定，判定入口是大四下的一个抉择页；那一页已经删掉了（玩家反馈
+    "直接把结果陆续出来了这个选项页面删掉"）。现在从属性到结局是直连的：
+    属性过门槛 + 对应的 capstone 节点解锁 = 这条路上岸。
     """
 
     id: str
@@ -59,9 +63,6 @@ class HookOption:
     resources: dict[str, int] = field(default_factory=dict)
     flags: tuple[str, ...] = ()
     track: str = ""
-    resolve: str = ""            # 要判定的赛道 key；"" 表示这是个纯剧情选项
-    resolve_gate: float = 0.55   # 判定通过所需的成功率
-    fallback_flags: tuple[str, ...] = ()   # 没通过时给的 flag（如"二战"）
 
 
 @dataclass(frozen=True)
@@ -301,6 +302,10 @@ def _mk_hook(
 # 而且还会顺手拿到一条不属于自己的 path flag（玩家反馈的第 1 条）。
 # 这里的作用是"给一条主线的启动资源 + 记一个方向"，不是"限制你能走哪条路"，
 # 所以每条赛道都要有自己的入口。
+#
+# 这是**唯一**会写 state.final_choice 的抉择（见 DIRECTION_HOOK_ID）：
+# 大四上那个抉择虽然也带 track，但它选的是"这两个月主攻什么"，
+# 不是"我要去哪"，拿它覆盖方向会让选科研/留学的人被判到别的赛道上去。
 _mk_hook(
     "k_sem5_direction",
     5,
@@ -465,128 +470,19 @@ _mk_hook(
     ),
 )
 
-# 大四上收尾：面对结果。
-# 这是四条"应试型"赛道的最终判定 —— 保研与科研靠成果 flag（推免资格 / 论文），
-# 考研、就业、考公、留学靠这里的 resolve 判定授予 flag。
-_mk_hook(
-    "k_sem8_result",
-    8,
-    "结果陆续出来了",
-    (
-        "名单公示、拟录取通知、offer 邮件、复试线——这一学期你会在各种"
-        "通知里反复确认自己的位置。不管结果如何，你还得决定怎么走完最后半年。"
-    ),
-    (
-        HookOption(
-            id="opt_res14_kaoyan",
-            text="去查初试成绩",
-            desc="十二月那两天已经考完了。这一把看的是四年的应试积累够不够。",
-            effects={"mind": 3},
-            resources={"fatigue": 4},
-            track="kaoyan",
-            resolve="kaoyan",
-            fallback_flags=("second_attempt",),
-        ),
-        HookOption(
-            id="opt_res14_qiuzhao",
-            text="去谈那份 offer",
-            desc="HR 问你什么时候能入职。你的实习和项目够不够撑住这一轮谈判。",
-            effects={"mind": 3},
-            resources={"fatigue": 3},
-            track="job",
-            resolve="job",
-            fallback_flags=("spring_hunt",),
-        ),
-        HookOption(
-            id="opt_res14_gov",
-            text="去参加面试和政审",
-            desc="笔试过了，接下来是结构化面试和政审材料。",
-            effects={"mind": 3},
-            resources={"fatigue": 4},
-            track="gov",
-            resolve="gov",
-            fallback_flags=("provincial_exam",),
-        ),
-        HookOption(
-            id="opt_res14_abroad",
-            text="去查申请结果",
-            desc="邮箱里躺着几封回信。语言成绩和背景决定你能去到哪里。",
-            effects={"mind": 3},
-            resources={"fatigue": 3},
-            track="abroad",
-            resolve="abroad",
-            fallback_flags=("gap_year",),
-        ),
-        HookOption(
-            id="opt_res14_settle",
-            text="接受现在的结果，把毕业设计做好",
-            desc="不再折腾，用最后半年换一个安稳的收尾和一份体面的毕设。",
-            effects={"gpa": 2, "mind": 4, "portfolio": 2},
-            resources={"fatigue": -10},
-            flags=("settled",),
-        ),
-        HookOption(
-            id="opt_res14_gap",
-            text="先休息一年，想清楚再走",
-            desc="放弃眼前的窗口，换回一个还不错的心态和身体。",
-            effects={"mind": 6, "body": 4, "exam": -2},
-            resources={"fatigue": -20},
-            flags=("gap_year",),
-        ),
-    ),
-)
-
-
-# ================================================================ 结局 flag 的授予
-
-# 每条赛道用于"成败判定"的属性组合（成功率的分子）
-RESOLVE_ATTRS: dict[str, tuple[str, ...]] = {
-    "kaoyan": ("exam", "english"),
-    "job": ("intern", "portfolio"),
-    "gov": ("exam", "leadership"),
-    "abroad": ("english", "research"),
-}
-
-# 授予的 flag
-RESOLVE_FLAGS: dict[str, str] = {
-    "kaoyan": "kaoyan_admitted",
-    "job": "qiuzhao_offer",
-    "gov": "party_member",
-    "abroad": "abroad_offer",
-}
-
-
-def resolve_chance(attrs: dict[str, int], track: str, gate: dict[str, int] | None = None) -> float:
-    """算这条赛道"上岸"的概率。
-
-    用玩家在这条赛道相关属性上的完成度当分子，门槛当分母；
-    超过门槛就稳（1.0），差得越多越悬。这是刻意设计的：
-    **属性堆够了就一定能上岸，不够就真的可能差一点**。
-    """
-    keys = RESOLVE_ATTRS.get(track, ())
-    if not keys:
-        return 1.0
-    thresholds = gate or {}
-    if not thresholds:
-        tracks = {
-            "kaoyan": ("exam", "english"),
-            "job": ("intern", "portfolio"),
-            "gov": ("exam", "leadership"),
-            "abroad": ("english", "research"),
-        }
-        primary = tracks.get(track, keys)
-        thresholds = {key: max(1, attrs.get(key, 0)) for key in primary}
-    ratio = 0.0
-    counted = 0
-    for key in keys:
-        need = thresholds.get(key, 0)
-        if need <= 0:
-            continue
-        ratio += min(1.4, float(attrs.get(key, 0)) / float(need))
-        counted += 1
-    if counted == 0:
-        return 1.0
-    return min(1.0, ratio / counted)
+# 大四下不再有抉择页。
+#
+# 原来第 8 学期挂着一个「结果陆续出来了」的抉择，答完直接判定结局。它有两个
+# 结构性问题，玩家都报过：
+#   1. 它在大四下**开学**就弹出并结束这一局，大四下那 2 个行动点永远花不出去 ——
+#      名义上 24 个行动点，实际只能用 22 个；
+#   2. 它终结游戏时不走 advance()，历史里要手工补一条空记录，学期标签很容易错位
+#      （玩家看到的就是"大四下结束显示的是大三下结束的信息"）。
+# 现在大四下是一个正常可玩的学期，行动点花完就自然收尾，结局在那一瞬间按
+# 属性和技能树直接判定。
+#
+# 这样一来每条赛道的 flag 都必须另有来源 —— 全部来自技能树的 capstone 节点，
+# 见 skilltree.py 和各赛道的 *_validate 检查。
 
 
 def get_hook(hook_id: str) -> Hook | None:
@@ -597,14 +493,19 @@ def hooks_for_semester(semester: int) -> list[Hook]:
     return [hook for hook in HOOKS.values() if hook.semester == semester]
 
 
-# 结局抉择：答完它就代表这一局结束（授予考研/就业/考公/留学 flag，
-# 或选择安稳收尾）。engine 靠这个 id 判断"该收尾了"，所以它必须和
-# 上面大四下的那个抉择保持一致。改 id 时两处一起改。
-FINAL_HOOK_ID = "k_sem8_result"
+# 定方向那一页：**只有它**会写 state.final_choice。
+# 别的抉择（大三下的暑假安排、大四上的主攻方向）虽然也带 track，
+# 但那是"这两个月干什么"，不是"我要去哪"，拿它覆盖方向会把选科研 /
+# 留学的人判到别的赛道上去。
+DIRECTION_HOOK_ID = "k_sem5_direction"
 
-# 所有抉择都必须落在这个区间内，否则引擎的抽取顺序会出错。
+# 所有抉择都必须落在这个区间内。
+#
+# 上界是 TOTAL_SEMESTERS - 1（大四上）**不是** TOTAL_SEMESTERS：
+# 第 N 学期的抉择是在第 N-1 学期结束时抛出的，挂在最后一学期上就等于
+# 让最后半个学期没法玩（这正是删掉那个结局抉择页的原因）。
 HOOK_SEMESTER_MIN = 1
-HOOK_SEMESTER_MAX = 8
+HOOK_SEMESTER_MAX = C.TOTAL_SEMESTERS - 1
 
 
 # ================================================================ 自检
@@ -645,27 +546,28 @@ def _validate() -> None:
                 if key not in C.ATTRS:
                     problems.append("序章选项 %s 含非法属性 %s" % (option_id, key))
 
-    if len(HOOKS) != 4:
-        problems.append("关键抉择应有 4 个，实际 %d" % len(HOOKS))
+    if len(HOOKS) != 3:
+        problems.append("关键抉择应有 3 个，实际 %d" % len(HOOKS))
 
-    # 结局抉择必须存在，而且是**唯一**落在最后一个学期的抉择。
-    # engine 靠它判断"这一局什么时候结束"：如果它不存在，或者最后一个
-    # 学期没有抉择，游戏会在没做结局判定时就结束（上一版就是这么坏的）。
-    if FINAL_HOOK_ID not in HOOKS:
-        problems.append("找不到结局抉择 %s" % FINAL_HOOK_ID)
+    # 定方向那一页必须存在，而且必须覆盖全部六条赛道。
+    # 它的 track 是 state.final_choice 的唯一来源；漏一条赛道，走那条路的
+    # 玩家就永远拿不到"我最后选的是这条路"的排序优先级。
+    if DIRECTION_HOOK_ID not in HOOKS:
+        problems.append("找不到定方向抉择 %s" % DIRECTION_HOOK_ID)
     else:
-        final = HOOKS[FINAL_HOOK_ID]
-        if final.semester != C.TOTAL_SEMESTERS:
-            problems.append(
-                "结局抉择 %s 应在第 %d 学期，实际第 %d 学期"
-                % (FINAL_HOOK_ID, C.TOTAL_SEMESTERS, final.semester)
-            )
-        last_sem = max(h.semester for h in HOOKS.values())
-        at_last = [h.id for h in HOOKS.values() if h.semester == last_sem]
-        if len(at_last) != 1:
-            problems.append("最后一个学期应有且只有 1 个抉择，实际 %r" % (at_last,))
-        if at_last != [FINAL_HOOK_ID]:
-            problems.append("最后一个学期的抉择必须是 %s，实际 %r" % (FINAL_HOOK_ID, at_last))
+        covered = {o.track for o in HOOKS[DIRECTION_HOOK_ID].options if o.track}
+        missing = [t for t in C.TRACKS if t not in covered]
+        if missing:
+            problems.append("定方向抉择没覆盖这些赛道：%r" % (missing,))
+
+    # 最后一个学期不能挂抉择：挂了就等于让大四下没法玩，
+    # 而且游戏会在没走完 advance() 的情况下收尾，学期标签必然错位。
+    at_last = [h.id for h in HOOKS.values() if h.semester >= C.TOTAL_SEMESTERS]
+    if at_last:
+        problems.append(
+            "第 %d 学期不该有抉择（大四下是正常可玩的学期）：%r"
+            % (C.TOTAL_SEMESTERS, at_last)
+        )
 
     semesters = sorted(h.semester for h in HOOKS.values())
     if len(set(semesters)) != len(semesters):
@@ -690,20 +592,13 @@ def _validate() -> None:
                     problems.append("抉择选项 %s 含非法资源 %s" % (option.id, key))
             if option.track and option.track not in C.TRACKS:
                 problems.append("抉择选项 %s 的赛道非法" % option.id)
-            if option.resolve:
-                if option.resolve not in C.TRACKS:
-                    problems.append("抉择选项 %s 的 resolve 指向非法赛道" % option.id)
-                elif option.resolve not in RESOLVE_FLAGS:
-                    problems.append("抉择选项 %s 的 resolve 赛道没有对应的 flag" % option.id)
 
     # 每条赛道的结局 flag 都必须有地方授予，否则那条路永远打不出来。
-    # 授予来源有两种：技能树节点（如"推免资格"节点给 tuimian_qualified）
-    # 和大四的关键抉择（resolve 判定通过 / option.flags）。
+    # 现在唯一的授予来源是技能树节点（原来的大四抉择已经删掉了，
+    # 所以这里不再统计 option.resolve）。
     grantable: set[str] = set()
     for hook in HOOKS.values():
         for option in hook.options:
-            if option.resolve:
-                grantable.add(RESOLVE_FLAGS.get(option.resolve, ""))
             grantable.update(option.flags)
     try:
         from . import skilltree as _skilltree

@@ -17,7 +17,7 @@ default save_mode = "save"      # "save" 或 "load"
 
 screen save_load_screen(mode="save"):
 
-    modal True
+    modal (not relax_modal)   # 见 bridge.rpy 的 relax_modal 说明
     add Solid("#000000DD")
 
     python:

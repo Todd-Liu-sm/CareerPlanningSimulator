@@ -183,12 +183,24 @@ Move-Item -LiteralPath $inner.FullName -Destination $staging
 # ---------------------------------------------------------------- strip dev files
 
 # Everything here is development-only and must not reach players.
+#
+# **Build outputs must be in this list too.** Ren'Py 8.5 has no build.classify
+# (see the top of this file), so `distribute` packs the WHOLE project directory
+# via its catch-all `("**", "all")` rule -- including `dist/` itself. That is not
+# hypothetical: building twice in a row put the previous release folder and its
+# 45 MB zip INSIDE the new zip, taking it from 43 MB to 130 MB. Nothing failed;
+# the size check is the only thing that caught it.
 $devEntries = @(
     ".renpy-sdk", ".renpy-dl", ".tools", ".git", ".gitignore",
     "tools", "tests", "docs",
     "idea.txt", "README.md", "requirement.md",
-    "log.txt", "errors.txt", "traceback.txt", "icon.ico"
+    "log.txt", "errors.txt", "traceback.txt", "icon.ico",
+    "dist", "build-out", ".vscode", ".idea", "node_modules"
 )
+
+# ...plus whatever directory this run is writing to, in case it is something else.
+$destLeaf = Split-Path -Leaf $destPath
+if ($destLeaf -and $destLeaf -ne ".") { $devEntries += $destLeaf }
 
 $removed = @()
 foreach ($entry in $devEntries) {
@@ -255,7 +267,11 @@ $checks[".rpyc ($rpycCount)"]     = $rpycCount -ge 5
 $checks["CJK font ($fontCount)"]  = $fontCount -ge 1
 
 # Dev leakage must be zero in BOTH the folder and the zip.
-$leakNames = @("tools", "tests", "docs", ".renpy-sdk", ".renpy-dl", "idea.txt", "README.md", "requirement.md")
+#
+# This list must stay in sync with $devEntries above. The size check below is a
+# backstop: anything that sneaks past BOTH of them shows up as a fat zip.
+$leakNames = @("tools", "tests", "docs", ".renpy-sdk", ".renpy-dl", "idea.txt",
+               "README.md", "requirement.md", "dist", "build-out", $destLeaf)
 $leaks = @(Get-ChildItem $unpackedDir -Force -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -in $leakNames })
 $checks["no dev leakage"] = ($leaks.Count -eq 0)

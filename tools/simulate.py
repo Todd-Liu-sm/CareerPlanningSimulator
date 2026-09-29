@@ -69,6 +69,15 @@ def _card_tags(card) -> set[str]:
     return set(getattr(card, "tags", ()) or ())
 
 
+# 「随意」打法靠掷骰子决定选哪张卡。
+#
+# **不能用全局 random。** 全局 random 是用系统熵播种的，同一个 seed 每次跑出来
+# 的结果都不一样 —— test_balance.py 里"随意打法不能稳定多线通吃"那条断言会
+# 随进程随机红/绿（实测同一份代码 max 命中数在 2 和 3 之间跳）。play_one() 会
+# 在开局时用这一局的 seed 重新播种它，这样"同种子同结果"对随机打法也成立。
+_JITTER = random.Random(0)
+
+
 def _card_value(card, strategy) -> float:
     """给一张卡打分。分数越高越优先选。
 
@@ -77,7 +86,7 @@ def _card_value(card, strategy) -> float:
     """
     name, primary, secondary, wanted = strategy
     if name == "随意":
-        return random.random()
+        return _JITTER.random()
 
     effects = getattr(card, "effects", None) or {}
     total = sum(abs(v) for v in effects.values()) or 1.0
@@ -135,6 +144,9 @@ def _card_value(card, strategy) -> float:
 def play_one(seed: int, strategy, major: str, start_id: str, verbose: bool = False):
     """跑完一局，返回引擎实例。"""
     name, primary, secondary, wanted = strategy
+    # 「随意」打法要掷骰子选卡，所以这一局的随机性必须由这一局的 seed 决定
+    # （见 _JITTER 的注释）。别的打法是确定性的，重播种没有副作用。
+    _JITTER.seed(seed)
     eng = ENG.create(seed=seed, cfg=GameConfig())
     eng.begin(start_id, major, "opt_summer_study", "opt_goal_deep")
 
@@ -390,7 +402,10 @@ def _report(
     if slow_share > 45.0:
         problems.append("兜底结局占比 %.2f%% 过高，门槛可能太严" % slow_share)
 
-    print("\n【单属性专精峰值】目标：主属性 40-60")
+    print(
+        "\n【单属性专精峰值】目标：主属性 %d-%d（属性口径硬顶 %d）"
+        % (CFG.ATTR_SOFT_MAX - 6, CFG.ATTR_MAX, CFG.ATTR_MAX)
+    )
     for key, values in sorted(primary_peaks.items()):
         if not values:
             continue
@@ -404,9 +419,15 @@ def _report(
     print("  属性点合计：中位 %d，最小 %d，最大 %d"
           % (statistics.median(totals), min(totals), max(totals)))
     print("  终局疲劳：中位 %d，最大 %d" % (statistics.median(fatigues), max(fatigues)))
-    print("  没跑完 %d 局，不足 16 学期 %d 局" % (rejected, empty_semesters))
+    print(
+        "  没跑完 %d 局，不足 %d 学期 %d 局"
+        % (rejected, CFG.TOTAL_SEMESTERS, empty_semesters)
+    )
 
-    print("\n【技能树覆盖】目标：60/60 个节点都至少被解锁过一次")
+    print(
+        "\n【技能树覆盖】目标：%d/%d 个节点都至少被解锁过一次"
+        % (len(SKT.NODE_LIST), len(SKT.NODE_LIST))
+    )
     unlocked_any = sum(1 for _id, count in node_hits.items() if count > 0)
     print("  被解锁过的节点：%d / %d" % (unlocked_any, len(SKT.NODE_LIST)))
     dead = [node for node in SKT.NODE_LIST if node_hits.get(node.id, 0) == 0]

@@ -153,6 +153,13 @@ label selfcheck:
     $ CHK.check_reset("selfcheck_report.txt")
     $ CHK.check_log("selfcheck_report.txt", "selfcheck 开始")
 
+    # 把模态浮层降级成非模态。**必须放在最前面**：模态屏幕显示着的时候
+    # renpy.pause() 会永远等下去（等那个没人点的 Return），自检就卡死在截图那一步
+    # —— 无报错、无截图、进程不退，而测试工具只看"没有 FAILED 行"还会报"全部通过"。
+    # 结果就是结算浮层和两个抉择浮层从来没被拍出来过。
+    # 真实游戏里这个值永远是 False（见 bridge.rpy）。
+    $ relax_modal = True
+
     $ new_game(seed=20260101)
 
     # ---------------- 开场三屏
@@ -175,6 +182,39 @@ label selfcheck:
 
     # ---------------- 正式开局（用真实流程，保证数据也是真的）
     $ begin_game("ace", "cs", "opt_summer_study", "opt_goal_deep")
+
+    # ---------------- 结算浮层
+    #
+    # **这一屏必须在 show screen game_screen 之前拍。**
+    # 两个 modal True 的屏幕同时显示会让 renpy.pause() 永久卡住（无报错、无截图、
+    # 进程不退）—— 这个自检原来就卡在这里，所以 13_semester_summary 从来没被
+    # 拍出来过（测试工具只看到"15 张截图、没有失败项"就报通过）。
+    # 而且顺序也**更接近真实游戏**：主循环里是 call_screen("game_screen") 返回
+    # 之后才 call_screen("semester_summary")，两者从不同时在栈上。
+    #
+    # 另外两点也是踩过的：
+    #   1. 必须先按学期把行动点补回去，否则 play() 会因为"行动点不够"返回一个
+    #      被拒绝的空结果，结算浮层就只剩标题、一张卡都没有。
+    #   2. 必须检查 result.ok。忽略返回值的话，这种失败会安静地画出一张
+    #      看起来"就是没内容"的截图，比报错更难发现。
+    python:
+        engine.state.action_points = C.ap_for(engine.semester)
+        _avail = engine.semester_cards()
+        _picks = [c.id for c in _avail[: max(1, engine.state.action_points)]]
+        _res = engine.play(_picks)
+        if not _res.ok:
+            CHK.check_log("selfcheck_report.txt", "sum 结算被拒绝：%s" % _res.rejected)
+        elif not _res.played:
+            CHK.check_log("selfcheck_report.txt", "sum 结算没有产生任何结果（play 返回空）")
+        else:
+            CHK.check_log("selfcheck_report.txt", "sum 结算了 %d 张卡，学期标签=%r" % (
+                len(_res.played), _res.semester_label))
+
+    show screen semester_summary(_res)
+    $ CHK.check_log("selfcheck_report.txt", "summary 已 show（下一步截图）")
+    $ CHK.shot_logged("13_semester_summary")
+    $ CHK.check_log("selfcheck_report.txt", "summary 截图返回")
+    hide screen semester_summary
 
     # game_screen 只 show 这一次，之后靠改 active_overlay 切换内容。
     # 不要反复 show/hide 同一个屏幕 —— 实测会在自检里把 pause 卡死（无报错、无截图、进程不退）。
@@ -209,23 +249,51 @@ label selfcheck:
         store.closed_categories.add("hobby")
 
     # ---------------- 四个浮层（切换 active_overlay 即可）
-    # 关键抉择浮层的"数据"自检：只验证内容，不截图。
+    # 关键抉择浮层的"数据"自检 + 截图。
     #
-    # **为什么不截图**：hook_popup 是模态浮层，而 game_screen 已经在显示中
-    # （上面刚 show 过）。两个模态同时存在 → renpy.pause() 永久卡住，
-    # 自检停在这里、无报错、无截图、进程不退（踩过）。
-    # 也**不能**先 hide screen game_screen 再拍 —— 那正是 DESIGN.md 第 20 条
-    # 记的坑：反复 show/hide game_screen 会把 pause 卡死。
-    # 真实游戏里不会有这个问题：抉择浮层是在 game_screen 显示**之前**弹出的
-    # （见主循环），两者从不共存。这几屏靠人眼验收。
+    # 这一屏以前**只做数据断言、不截图**：hook_popup 是模态浮层，模态屏幕显示着
+    # 的时候 renpy.pause() 会永远等下去，自检卡死在这里。现在 selfcheck 一开头
+    # 就把 relax_modal 设成了 True，模态被降级，所以能拍了。
+    # 这两个浮层（抉择 / 事件）是全游戏最该被看见的两屏，之前一直是"靠人眼验收"。
     python:
         _hv = CM.starts.HOOKS["k_sem5_direction"]
-        _fh = hook_view(CM.starts.HOOKS[CM.starts.FINAL_HOOK_ID])
         CHK.check_log("selfcheck_report.txt", "定方向选项数=%d 覆盖赛道=%s" % (
             len(_hv.options), sorted({o.track for o in _hv.options if o.track})))
-        CHK.check_log("selfcheck_report.txt", "收尾抉择带 resolve 的选项=%d/%d，示例把握=%s" % (
-            sum(1 for r in _fh["options"] if r["resolve"]), len(_fh["options"]),
-            [r["chance_text"] for r in _fh["options"] if r["resolve"]][:2]))
+        # 收尾抉择页已经删掉了 —— 这里盯着"它真的不存在了"，而不是"它长得对不对"
+        CHK.check_log("selfcheck_report.txt", "抉择页个数=%d 学期=%s，第 %d 学期无抉择：%s" % (
+            len(CM.starts.HOOKS),
+            sorted(h.semester for h in CM.starts.HOOKS.values()),
+            C.TOTAL_SEMESTERS,
+            not any(h.semester >= C.TOTAL_SEMESTERS for h in CM.starts.HOOKS.values())))
+        # 每条赛道的结局 flag 都必须有节点授予（收尾抉择页删掉后这是唯一来源）
+        _granted = set()
+        for _node in CM.skilltree.NODE_LIST:
+            _granted.update(_node.grants_flags)
+        CHK.check_log("selfcheck_report.txt", "结局 flag 授予情况：%s" % {
+            _t: all(_f in _granted for _f in _fs)
+            for _t, _fs in C.ENDING_FLAGS.items()})
+        # 每条赛道算一遍"至少要达到什么水平"，这是界面画「离这条路还差多少」的依据
+        CHK.check_log("selfcheck_report.txt", "各赛道最低门槛：%s" % {
+            _t: CM.engine.STR_ending_gate(_t) for _t in C.TRACKS})
+
+    show screen hook_popup(_hv)
+    $ CHK.shot_logged("06d_hook_popup")
+    hide screen hook_popup
+
+    python:
+        _ev = None
+        for _e in CM.events.EVENT_LIST:
+            if _e.options and _e.sem_lo <= engine.semester <= _e.sem_hi:
+                _ev = _e
+                break
+        CHK.check_log("selfcheck_report.txt", "事件浮层样本：%s（%d 个选项）" % (
+            getattr(_ev, "id", "（没有可用事件）"),
+            len(getattr(_ev, "options", ()) or ())))
+
+    if _ev is not None:
+        show screen event_popup(_ev)
+        $ CHK.shot_logged("06e_event_popup")
+        hide screen event_popup
 
     $ active_overlay = "tree"
     $ CHK.shot_logged("07_skill_tree_locked")
@@ -284,48 +352,23 @@ label selfcheck:
         $ save_mode = "save"
         $ active_overlay = ""
         show screen save_load_screen(mode="save")
-        $ CHK.shot_logged("13_save_screen")
+        $ CHK.shot_logged("15_save_screen")
         hide screen save_load_screen
         $ CHK.check_log("selfcheck_report.txt", "存档界面已渲染")
 
-    # 只拍结局的模式：跳过结算浮层，直接把一局快进到底。
+    # 只拍结局的模式（DSH_SELFCHECK_ENDING=1 / tools/run_tests.ps1 -EndingOnly）：
+    # 跳过后面的界面，直接把一局快进到底拍结局页。
     #
-    # 为什么要分两个模式：`hide screen game_screen` 在复杂布局 + viewport 的
-    # 情况下会让下一次 `renpy.pause()` 卡死（12 张图之后停住、无报错、无截图、
-    # 进程不退）。与其去猜 Ren'Py 内部的渲染时机，不如让"拍结局"这件事
-    # 从一开始就不需要主界面存在。
+    # 注意这个开关**不再是**为了绕开卡死了 —— 结算浮层的卡死是"两个 modal True
+    # 同时显示"造成的，已经把它挪到 show screen game_screen 之前解决掉了
+    # （见上面）。留它只是为了要一张结局图时能快一点。
     python:
         _only_ending = CHK.env_flag("DSH_SELFCHECK_ENDING")
 
     if _only_ending:
         jump selfcheck_finish
 
-    # ---------------- 结算浮层
-    #
-    # 注意两点（都是这里踩过的）：
-    #   1. 前面的 python 块把 engine.state.action_points 设成了 0 来伪造"学期结束"，
-    #      所以这里必须先按学期把行动点补回去，否则 play() 会因为"行动点不够"
-    #      返回一个被拒绝的空结果，结算浮层就只剩标题、一张卡都没有。
-    #   2. 必须检查 result.ok。ignoring 返回值的话，这种失败会安静地画出一张
-    #      看起来"就是没内容"的截图，比报错更难发现。
-    python:
-        engine.state.action_points = C.ap_for(engine.semester)
-        _avail = engine.semester_cards()
-        _picks = [c.id for c in _avail[: max(1, engine.state.action_points)]]
-        _res = engine.play(_picks)
-        if not _res.ok:
-            CHK.check_log("selfcheck_report.txt", "sum 结算被拒绝：%s" % _res.rejected)
-        elif not _res.played:
-            CHK.check_log("selfcheck_report.txt", "sum 结算没有产生任何结果（play 返回空）")
-        else:
-            CHK.check_log("selfcheck_report.txt", "sum 结算了 %d 张卡" % len(_res.played))
-
-    show screen semester_summary(_res)
-    $ CHK.shot_logged("13_semester_summary")
-    hide screen semester_summary
-
     jump selfcheck_finish
-
 
 label selfcheck_finish:
 
@@ -352,6 +395,18 @@ label selfcheck_finish:
             if not _r.ok:
                 break
         CHK.check_log("selfcheck_report.txt", "跑到结局：%s" % engine.resolve_ending().name)
+
+    # ---------------- 学期账的端到端校验（另开一局干净的打完）
+    #
+    # 这里**故意不查上面那个 engine**：自检前面已经手工把它的学期拨到 9、
+    # 伪造过 history，拿它算"学期标签对不对"只会得到假警报。
+    # 见 bridge.selfcheck_full_run 的说明。
+    python:
+        _full = selfcheck_full_run()
+        for _key in ("跑完", "跑到第几学期", "历史条数", "标签正确", "最后一条",
+                     "最后一条投了几张", "卡片与行动点对不上的学期", "复盘对不上的行",
+                     "结局", "抉择挂在第几学期"):
+            CHK.check_log("selfcheck_report.txt", "整局校验 ・ %s = %s" % (_key, _full[_key]))
 
     # game_screen 在这个 label 里从没被 show 过，所以不需要 hide。
     show screen ending_screen
