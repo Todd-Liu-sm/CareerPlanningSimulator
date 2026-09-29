@@ -330,6 +330,30 @@ init python:
             })
         return rows
 
+    def mood_rows():
+        """参考状态：**与结局无关**，只给玩家看"这四年过得怎么样"。
+
+        玩家反馈："加关于人物的一些属性，比如幸福感、自信值等等这些属性与结局无关，
+        仅供玩家做个参考。然后两类属性你分开展示。"
+        """
+        eng = store.engine
+        if eng is None:
+            return []
+        moods = getattr(eng.player, "moods", None) or {}
+        rows = []
+        for key in C.MOODS:
+            value = int(moods.get(key, C.MOOD_START))
+            rows.append({
+                "key": key,
+                "name": C.MOOD_NAMES[key],
+                "value": value,
+                "ratio": max(0.0, min(1.0, value / float(C.MOOD_MAX))),
+                "desc": C.MOOD_DESC[key],
+                # 相对初始值的变化 —— 玩家一眼看出"这四年我是赚了还是亏了"
+                "delta": value - C.MOOD_START,
+            })
+        return rows
+
     def hobby_summary_rows(only_invested=True):
         """爱好行。侧栏只显示已投入过的，独立页面显示全部。"""
         eng = store.engine
@@ -380,6 +404,59 @@ init python:
             ),
         }
 
+    def hook_view(hook):
+        """把关键抉择包装成界面能直接渲染的行。
+
+        为什么要包一层：带 ``resolve`` 的选项需要显示**成功率**和**判定属性**
+        —— 玩家反馈"结果陆续出来了没太看懂，为啥全是需要争取，而且只 +3 心态"。
+        原来界面上只有一个干巴巴的"需要真的去争取"，玩家根本不知道
+        这一手按下去了算的是什么、自己有几成把握。
+        """
+        if hook is None:
+            return None
+        eng = store.engine
+        is_final = getattr(hook, "id", "") == CM.starts.FINAL_HOOK_ID
+        rows = []
+        for option in hook.options:
+            track = getattr(option, "resolve", "") or ""
+            row = {
+                "id": option.id,
+                "text": option.text,
+                "desc": getattr(option, "desc", "") or "",
+                "effects": fmt_gain_dict(getattr(option, "effects", None) or {}),
+                "fatigue": int((getattr(option, "resources", None) or {}).get("fatigue", 0)),
+                "track": getattr(option, "track", "") or "",
+                "track_name": C.TRACK_NAMES.get(getattr(option, "track", ""), ""),
+                "resolve": track,
+                "resolve_name": C.TRACK_NAMES.get(track, ""),
+                "chance": 0.0,
+                "chance_text": "",
+                "need_text": "",
+                "is_final": is_final,
+            }
+            if track and eng is not None:
+                gate = _ending_gate(track)
+                chance = CM.starts.resolve_chance(eng.player.attrs, track, gate)
+                row["chance"] = chance
+                row["chance_text"] = "把握 %d%%" % round(chance * 100)
+                row["need_text"] = " ・ ".join(
+                    "%s %d/%d" % (C.ATTR_SHORT.get(k, k), eng.player.attrs.get(k, 0), v)
+                    for k, v in gate.items()
+                )
+                row["ready"] = chance >= 0.999
+            rows.append(row)
+        return {
+            "id": hook.id,
+            "title": hook.title,
+            "text": hook.text,
+            "options": rows,
+            "is_final": is_final,
+        }
+
+    def _ending_gate(track):
+        """取某条赛道用于"上岸判定"的门槛（和引擎里用的是同一个函数）。"""
+        return CM.engine.STR_ending_gate(track)
+
     def visible_cards():
         """本学期可见卡，附上"投一次会涨什么"和"已经投过几次"。"""
         eng = store.engine
@@ -388,6 +465,9 @@ init python:
         rows = []
         for card in eng.semester_cards():
             preview = pending_preview_for(card.id)
+            # 这张卡算不算"休息"：算的话投它会把疲劳往回压。
+            # 玩家反馈"不知道疲惫值是怎么提升的"，所以卡面上要直接写清楚。
+            is_rest = bool(set(card.tags or ()) & C.REST_TAGS)
             rows.append({
                 "card": card,
                 "id": card.id,
@@ -406,6 +486,12 @@ init python:
                 "hobby": hobby_track(card.hobby[0]) if card.hobby else None,
                 # 折叠分组用
                 "category": CM.categories.category_of(card),
+                # 疲劳影响：休息类回 FATIGUE_REST_RELIEF，其余每点 +FATIGUE_PER_ACTION
+                "is_rest": is_rest,
+                "fatigue_hint": (
+                    "疲劳 -%d" % C.FATIGUE_REST_RELIEF if is_rest
+                    else "疲劳 +%d" % C.FATIGUE_PER_ACTION
+                ),
             })
         return rows
 

@@ -386,61 +386,114 @@ screen overlay_attrs():
 
     use overlay_shell("属性", "一局 %d 个行动点，能到 %d 以上就已经是顶尖水平" % (C.TOTAL_ACTIONS, C.ATTR_BANDS[-2][0])):
 
-        vbox:
-            xpos 20
-            ypos 80
-            spacing 10
+        # 左栏：结局属性（可滚动）
+        side "c r":
+            xysize (620, 620)
+            xpos 16
+            ypos 78
+            spacing 6
 
-            for row in attr_summary_rows():
-                frame:
-                    xysize (600, 62)
-                    background Solid(c_panel)
-                    padding (12, 8)
-                    vbox:
-                        spacing 3
-                        hbox:
-                            spacing 8
-                            text "[row['full_name']]" style "t_body" xsize 110
-                            text "[row['value']]" style "t_head" xsize 46 text_align 1.0
-                            text "[row['band']]" style "t_small" color c_accent xsize 50
-                            text "[pct_text(row['ratio'])]" style "t_small" color c_text_faint xalign 1.0
-                        add progress_bar(576, 10, row["ratio"], c_accent)
-                        text "[row['desc']]" style "t_tiny" color c_text_faint
+            viewport id "attrs":
+                mousewheel True
+                draggable True
+                xsize 604
 
+                vbox:
+                    spacing 10
+
+                    frame:
+                        xfill True
+                        background Solid(c_panel_lo)
+                        padding (10, 6)
+                        text "结局属性 ・ 这十项决定你能走哪条路" style "t_small" color c_accent
+
+                    for row in attr_summary_rows():
+                        frame:
+                            xysize (580, 58)
+                            background Solid(c_panel)
+                            padding (12, 8)
+                            vbox:
+                                spacing 3
+                                hbox:
+                                    spacing 8
+                                    text "[row['full_name']]" style "t_body" xsize 110
+                                    text "[row['value']]" style "t_head" xsize 46 text_align 1.0
+                                    text "[row['band']]" style "t_small" color c_accent xsize 50
+                                    text "[pct_text(row['ratio'])]" style "t_small" color c_text_faint xalign 1.0
+                                add progress_bar(556, 10, row["ratio"], c_accent)
+                                text "[row['desc']]" style "t_tiny" color c_text_faint
+
+            vbar:
+                value YScrollValue("attrs")
+                xsize 8
+
+        # 右栏：进度 + 状态 + 参考状态。
+        # 高度必须算够：4 个 frame 依次是 200 / 110 / 110 / 250，加 3 个 12px 间距
+        # = 706，从 y 80 起刚好到 786 —— 之前参考状态那段 268 高，总高 724
+        # 直接顶出屏幕、和上面那块叠在一起。
         vbox:
             xpos 650
-            ypos 80
-            spacing 12
+            ypos 76
+            spacing 10
 
             frame:
-                xysize (610, 200)
+                xysize (610, 196)
                 background Solid(c_panel)
                 padding (14, 12)
                 vbox:
-                    spacing 6
+                    spacing 5
                     text "毕业方向进度" style "t_head"
                     for row in track_summary_rows():
                         use track_bar(row)
 
             frame:
-                xysize (610, 150)
+                xysize (610, 106)
                 background Solid(c_panel)
                 padding (14, 12)
                 vbox:
-                    spacing 6
+                    spacing 4
                     text "状态" style "t_head"
                     use resource_line("疲劳", engine.state.fatigue, c_danger, C.RESOURCE_MAX)
-                    null height 6
-                    text "疲劳 >= [C.FATIGUE_PENALTY_AT] 所有收益打八折；>= [C.FATIGUE_BURNOUT_AT] 会透支。" style "t_tiny" color c_text_faint
+                    text "疲劳 >= [C.FATIGUE_PENALTY_AT] 收益打八折；>= [C.FATIGUE_BURNOUT_AT] 会透支。" style "t_tiny" color c_text_faint
 
             frame:
-                xysize (610, 120)
+                xysize (610, 110)
                 background Solid(c_panel)
                 padding (14, 12)
                 vbox:
-                    spacing 6
+                    spacing 5
                     text "技能树总进度" style "t_head"
                     python:
                         _overall = overall_progress_row()
                     text "[ _overall['done'] ] / [ _overall['total'] ] 个节点" style "t_body"
                     add progress_bar(576, 12, _overall["ratio"], c_gold)
+
+            # 参考状态：**独立一段，标题写明与结局无关**。
+            # 玩家反馈要求"两类属性分开展示，一种与结局有关，一种是给玩家参考的"，
+            # 所以这里用金色 + 说明文字把它和左栏的结局属性明确区分开。
+            frame:
+                xysize (610, 246)
+                background Solid(c_panel)
+                padding (14, 12)
+                vbox:
+                    spacing 3
+                    text "参考状态" style "t_head" color c_gold
+                    text "与结局无关，只是你这四年过得怎么样。初始都是 %d。" % C.MOOD_START style "t_tiny" color c_text_faint
+                    null height 2
+                    for row in mood_rows():
+                        vbox:
+                            spacing 1
+                            hbox:
+                                spacing 6
+                                # 110px 是量出来的：「社交满意度」5 个字 @17px ≈ 87px，
+                                # 84 会折行（折行后这一行变高、四条挤不进 234px）。
+                                text "[row['name']]" style "t_small" xsize 110
+                                text "[row['value']]" style "t_small" xsize 30 text_align 1.0
+                                if row['delta'] > 0:
+                                    text "+[row['delta']]" style "t_tiny" color c_up yalign 0.5
+                                elif row['delta'] < 0:
+                                    text "[row['delta']]" style "t_tiny" color c_down yalign 0.5
+                                else:
+                                    text "持平" style "t_tiny" color c_text_faint yalign 0.5
+                                text "[pct_text(row['ratio'])]" style "t_tiny" color c_text_faint xalign 1.0
+                            add progress_bar(576, 7, row['ratio'], c_gold)

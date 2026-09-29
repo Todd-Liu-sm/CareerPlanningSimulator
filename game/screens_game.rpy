@@ -187,6 +187,14 @@ screen game_screen():
             null height 7
             use resource_line("疲劳", engine.state.fatigue, c_danger, C.RESOURCE_MAX)
 
+            # 参考状态：和结局无关，所以放在最后，而且画得轻一点。
+            # 完整说明在「属性」页。
+            null height 7
+            text "参考状态" style "t_tiny" color c_text_faint
+            null height 2
+            for row in mood_rows():
+                use mood_line(row)
+
     # ---------------- 浮层
     if active_overlay == "tree":
         use overlay_tree()
@@ -279,6 +287,25 @@ screen hobby_mini_row(row):
         add progress_bar(160, 8, row['ratio'], c_gold) yalign 0.5
 
 
+# 参考状态的一行。**故意画得比结局属性轻**（金色 + 细条 + 没有阶段称谓），
+# 让玩家一眼看出这不是要凑的门槛。
+screen mood_line(row):
+    vbox:
+        spacing 1
+        xsize 252
+        hbox:
+            spacing 6
+            text "[row['name']]" style "t_tiny" xsize 76
+            text "[row['value']]" style "t_tiny" xsize 26 text_align 1.0
+            if row['delta'] > 0:
+                text "+[row['delta']]" style "t_tiny" color c_up xalign 1.0
+            elif row['delta'] < 0:
+                text "[row['delta']]" style "t_tiny" color c_down xalign 1.0
+            else:
+                text "持平" style "t_tiny" color c_text_faint xalign 1.0
+        add progress_bar(248, 6, row['ratio'], c_gold)
+
+
 # ================================================================ 行动卡
 
 
@@ -348,6 +375,9 @@ screen action_card(row):
                             text "+[value]" style "t_tiny" color color xsize 34 text_align 1.0
                         else:
                             text "[value]" style "t_tiny" color color xsize 34 text_align 1.0
+                # 疲劳影响写在卡面上：玩家反馈"不知道疲惫值是怎么提升的"。
+                # 休息类回 10 点、其余每点 +4 点，都是选之前就该看到的信息。
+                text "[row['fatigue_hint']]" style "t_tiny" color (c_up if row['is_rest'] else c_text_faint) xalign 1.0
                 text "[row['cost']] 行动点" style "t_tiny" color c_text_faint xalign 1.0
 
 
@@ -399,7 +429,7 @@ screen semester_summary(result):
     add Solid("#000000AA")
 
     frame:
-        xysize (780, 580)
+        xysize (780, 668)
         xalign 0.5
         yalign 0.5
         background Solid(c_panel)
@@ -408,10 +438,15 @@ screen semester_summary(result):
         vbox:
             spacing 12
 
-            text "[engine.semester_label()] 结束了" style "t_title"
+            # **必须用 result.semester_label，不能用 engine.semester_label()。**
+            # play() 在行动点花完后会立刻推进到下一学期，所以界面拿到结果时
+            # engine.semester 已经是新学期了 —— 原来这里读 engine，
+            # 结果把刚过完的学期标成了新学期（玩家看到"大四上结束了"底下是
+            # 大三下的内容）。
+            text "[result.semester_label] 结束了" style "t_title"
 
             side "c r":
-                xysize (732, 360)
+                xysize (732, 340)
                 spacing 6
 
                 viewport id "summary":
@@ -427,6 +462,28 @@ screen semester_summary(result):
                 vbar:
                     value YScrollValue("summary")
                     xsize 8
+
+            # 这一学期的疲劳账：玩家反馈"不知道疲惫值是怎么提升的"，
+            # 所以把净变化和提示直接摆在结算里。
+            frame:
+                xfill True
+                background Solid(c_bg_deep)
+                padding (10, 8)
+                vbox:
+                    spacing 3
+                    hbox:
+                        spacing 10
+                        text "这一学期" style "t_small" color c_text_dim
+                        text "休息行动 [result.rest_points] 次" style "t_tiny" color c_text_faint yalign 0.5
+                        if result.fatigue_delta > 0:
+                            text "疲劳 +[result.fatigue_delta]" style "t_small" color c_danger yalign 0.5
+                        elif result.fatigue_delta < 0:
+                            text "疲劳 [result.fatigue_delta]" style "t_small" color c_up yalign 0.5
+                        else:
+                            text "疲劳 不变" style "t_small" color c_text_faint yalign 0.5
+                        text "现在 [engine.state.fatigue] / [C.RESOURCE_MAX]" style "t_tiny" color c_text_faint yalign 0.5
+                    for note in result.notes:
+                        text "・ [note]" style "t_tiny" color c_text_faint
 
             if unlock_notice:
                 frame:
@@ -530,6 +587,10 @@ screen event_popup(event):
 
 screen hook_popup(hook):
 
+    # hook_view 把 Hook 包成可直接渲染的行：带 resolve 的选项会带上
+    # 成功率、判定属性和"这一手决定结局"的标注。
+    $ _hv = hook_view(hook)
+
     modal True
     add Solid("#000000CC")
 
@@ -544,37 +605,57 @@ screen hook_popup(hook):
             spacing 13
 
             text "关键抉择" style "t_tiny" color c_danger
-            text "[hook.title]" style "t_title"
-            text "[hook.text]" style "t_body" color c_text_dim
+            text "[_hv['title']]" style "t_title"
+            text "[_hv['text']]" style "t_body" color c_text_dim
+
+            if _hv['is_final']:
+                # 这一屏不是普通的选项 —— 它直接决定这一局的结局。
+                frame:
+                    xfill True
+                    background Solid(c_bg_deep)
+                    padding (12, 8)
+                    text "这是最后一次判定：下面带「把握」的选项会按你的属性算一次成败，过了才算真的上岸。只能选一个。" style "t_small" color c_gold
 
             null height 4
 
-            for option in hook.options:
+            for option in _hv['options']:
                 button:
                     xfill True
                     background Solid(c_panel_hi)
                     hover_background Solid(c_hover_bg)
                     padding (14, 11)
-                    action Return(option.id)
+                    action Return(option['id'])
                     vbox:
                         spacing 4
                         hbox:
                             spacing 8
-                            text "[option.text]" style "t_body"
-                            if option.resolve:
-                                text "需要真的去争取" style "t_tiny" color c_gold yalign 0.5
-                        text "[option.desc]" style "t_tiny" color c_text_faint
-                        if option.effects:
-                            hbox:
-                                spacing 12
-                                for name, value, color in fmt_gain_dict(option.effects):
-                                    hbox:
-                                        spacing 3
-                                        text "[name]" style "t_tiny" color c_text_faint
-                                        if value > 0:
-                                            text "+[value]" style "t_tiny" color color
-                                        else:
-                                            text "[value]" style "t_tiny" color color
+                            text "[option['text']]" style "t_body"
+                            if option['resolve']:
+                                if option['ready']:
+                                    text "[option['chance_text']]" style "t_tiny" color c_accent yalign 0.5
+                                else:
+                                    text "[option['chance_text']]" style "t_tiny" color c_gold yalign 0.5
+                                text "决定 [option['resolve_name']] 结局" style "t_tiny" color c_text_faint yalign 0.5
+                            elif option['track_name']:
+                                text "倾向 [option['track_name']]" style "t_tiny" color c_text_faint yalign 0.5
+                        text "[option['desc']]" style "t_tiny" color c_text_faint
+                        # 判定属性：让玩家看见"这一把算的是什么"
+                        if option['need_text']:
+                            text "判定：[option['need_text']]" style "t_tiny" color c_text_faint
+                        hbox:
+                            spacing 12
+                            for name, value, color in option['effects']:
+                                hbox:
+                                    spacing 3
+                                    text "[name]" style "t_tiny" color c_text_faint
+                                    if value > 0:
+                                        text "+[value]" style "t_tiny" color color
+                                    else:
+                                        text "[value]" style "t_tiny" color color
+                            if option['fatigue'] > 0:
+                                text "疲劳 +[option['fatigue']]" style "t_tiny" color c_danger
+                            elif option['fatigue'] < 0:
+                                text "疲劳 [option['fatigue']]" style "t_tiny" color c_up
 
 
 # ================================================================ 按钮样式

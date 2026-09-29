@@ -199,6 +199,66 @@ def attr_gain(
     return gain
 
 
+# ================================================================ 参考状态
+
+# 从 tag 推导参考状态的变化。
+#
+# 为什么不写在每张卡的 effects 里：167 张卡手工贴 mood 值必然漏标错标，
+# 而且以后加卡的人不会记得填。参考状态本来就是"这件事让你过得怎么样"的
+# 常识映射 —— 运动让生活状态变好、社交让社交满意度变高、熬夜让它变差 ——
+# 用 tag 推导既准确又不增加内容负担。
+#
+# 注意：这组数值**不参与任何结局判定**。skilltree / endings 只看 C.ATTRS。
+_MOOD_BY_TAG: dict[str, dict[str, int]] = {
+    "sport": {"health": 3, "happiness": 2},
+    "rest": {"health": 2, "happiness": 1},
+    "entertain": {"happiness": 2},
+    "hobby": {"happiness": 2},
+    "social": {"social": 3, "happiness": 1},
+    "network": {"social": 2},
+    "volunteer": {"happiness": 2, "confidence": 1},
+    "leadership": {"confidence": 2},
+    "party": {"confidence": 1},
+    "project": {"confidence": 2},
+    "portfolio": {"confidence": 1},
+    "research": {"confidence": 1},
+    "lab": {"confidence": 1},
+    "study": {"confidence": 1},
+    "gpa": {"confidence": 1},
+    "exam": {"confidence": 1},
+    "english": {"confidence": 1},
+    "intern": {"confidence": 1},
+    "cert": {"confidence": 1},
+    "contest": {"confidence": 1},
+}
+
+# 一学期里同一类参考状态的涨幅上限，避免"投三张运动卡"把生活状态顶满
+_MOOD_PER_CARD_CAP = 4
+
+
+def mood_gain_for(card: Any) -> dict[str, int]:
+    """一张卡给参考状态带来的变化。"""
+    total: dict[str, int] = {}
+    for tag in getattr(card, "tags", ()) or ():
+        for key, value in _MOOD_BY_TAG.get(tag, {}).items():
+            total[key] = total.get(key, 0) + value
+    # 负收益的卡（比如"打游戏"扣绩点）说明这是"明知故犯的放松"，
+    # 幸福感照样涨，但生活状态要扣一点
+    effects = getattr(card, "effects", None) or {}
+    if effects.get("gpa", 0) < 0:
+        total["health"] = total.get("health", 0) - 1
+    return {k: min(v, _MOOD_PER_CARD_CAP) for k, v in total.items() if v}
+
+
+def apply_moods(player: PlayerState, gains: dict[str, int]) -> None:
+    """直接写一组参考状态（带上下限截断）。"""
+    for key, value in (gains or {}).items():
+        if key not in C.MOODS:
+            continue
+        current = player.moods.get(key, C.MOOD_START)
+        player.moods[key] = max(C.MOOD_MIN, min(C.MOOD_MAX, current + int(value)))
+
+
 # ================================================================ 属性写入
 
 def _fatigue_multiplier(fatigue: int) -> float:
@@ -226,6 +286,12 @@ def add_attrs(
         prepared[key] = prepared.get(key, 0) + amount
 
     for key, amount in prepared.items():
+        if key in C.MOODS:
+            # 参考状态：和结局无关，只给玩家看"这四年过得怎么样"。
+            # 上下限是 0-100，初始 50，可以涨也可以跌。
+            current = player.moods.get(key, C.MOOD_START)
+            player.moods[key] = max(C.MOOD_MIN, min(C.MOOD_MAX, current + amount))
+            continue
         if key not in C.ATTRS:
             continue
         current = player.attrs.get(key, 0)
@@ -312,6 +378,9 @@ def apply_card(
     if rest or _is_rest(card):
         state.rest_points += 1
 
+    # 参考状态：从 tag 推导，不参与任何门槛判定（见 mood_gain_for）
+    apply_moods(player, mood_gain_for(card))
+
     delta.attrs_after = _snapshot_player(player)
     delta.resources_after = _snapshot_resource(state)
     delta.new_flags = tuple(flag_list)
@@ -344,6 +413,13 @@ def apply_event_option(state: GameState, option: Any) -> EffectDelta:
 
     effects = dict(getattr(option, "effects", None) or {})
     add_attrs(player, effects, state.fatigue)
+
+    # 事件也算"这四年过得怎么样"：好事件（效果为正）推幸福感，坏事件（效果为负）压它
+    _net = sum(v for k, v in effects.items() if k in C.ATTRS)
+    if _net > 0:
+        apply_moods(player, {"happiness": 2, "confidence": 1})
+    elif _net < 0:
+        apply_moods(player, {"happiness": -2, "confidence": -2})
 
     for key, amount in (getattr(option, "resources", None) or {}).items():
         add_resource(state, key, _to_int(int(amount)))

@@ -294,7 +294,13 @@ def _mk_hook(
     return hook
 
 
-# 大三上：要不要押注保研 / 考研
+# 大三上：该定方向了。
+#
+# **必须覆盖全部六条赛道。** 原来是保研 / 考研 / 两手抓三个选项 ——
+# 想走就业、考公、留学、科研的玩家在这一步发现"没有我的路"，
+# 而且还会顺手拿到一条不属于自己的 path flag（玩家反馈的第 1 条）。
+# 这里的作用是"给一条主线的启动资源 + 记一个方向"，不是"限制你能走哪条路"，
+# 所以每条赛道都要有自己的入口。
 _mk_hook(
     "k_sem5_direction",
     5,
@@ -321,6 +327,42 @@ _mk_hook(
             resources={"fatigue": 8},
             flags=("path_kaoyan",),
             track="kaoyan",
+        ),
+        HookOption(
+            id="opt_sem6_job",
+            text="全力准备就业",
+            desc="把简历、项目、实习经历补齐，开始按岗位要求倒推要学什么。",
+            effects={"intern": 3, "portfolio": 2, "network": 2},
+            resources={"fatigue": 6},
+            flags=("path_job",),
+            track="job",
+        ),
+        HookOption(
+            id="opt_sem6_gov",
+            text="全力备考公务员与选调",
+            desc="行测申论开始系统推进，同时把入党和干部经历往前赶。",
+            effects={"exam": 4, "leadership": 3},
+            resources={"fatigue": 6},
+            flags=("path_gov",),
+            track="gov",
+        ),
+        HookOption(
+            id="opt_sem6_abroad",
+            text="全力准备留学",
+            desc="语言成绩和 GPA 是硬门槛，科研与实习是用来讲故事的材料。",
+            effects={"english": 4, "research": 2, "gpa": 1},
+            resources={"fatigue": 6},
+            flags=("path_abroad",),
+            track="abroad",
+        ),
+        HookOption(
+            id="opt_sem6_research",
+            text="钻进实验室做科研",
+            desc="不急着定去向，先把课题做扎实 —— 论文和成果去哪里都有用。",
+            effects={"research": 4, "portfolio": 2},
+            resources={"fatigue": 7},
+            flags=("path_research",),
+            track="research",
         ),
         HookOption(
             id="opt_sem6_balance",

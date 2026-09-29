@@ -196,10 +196,37 @@ def test_gamestate_rejects_wrong_schema_version():
 
 
 def test_gamestate_from_dict_tolerates_missing_fields():
-    data = {"schema_version": 1}
-    state = GameState.from_dict(data)
+    """同一版存档结构下，缺字段要能补默认值而不是崩。"""
+    from game.core import SCHEMA_VERSION
+
+    state = GameState.from_dict({"schema_version": SCHEMA_VERSION})
     assert state.semester == 1
     assert state.player.attr_total == 0
+    # 参考状态：存档里没有这个字段时补初始值
+    assert state.player.moods == {k: C.MOOD_START for k in C.MOODS}
+
+
+def test_gamestate_rejects_other_schema_versions():
+    """版本号对不上必须明确报错，而不是读出一局错数据。"""
+    from game.core import SCHEMA_VERSION
+
+    with pytest.raises(ValueError):
+        GameState.from_dict({"schema_version": SCHEMA_VERSION + 99})
+    with pytest.raises(ValueError):
+        GameState.from_dict({"schema_version": 0})
+
+
+def test_moods_are_clamped_on_load():
+    """存档里的参考状态越界要被夹回来。"""
+    from game.core import SCHEMA_VERSION
+
+    state = GameState.from_dict({
+        "schema_version": SCHEMA_VERSION,
+        "player": {"moods": {"happiness": 9999, "confidence": -50, "不存在的key": 10}},
+    })
+    assert state.player.moods["happiness"] == C.MOOD_MAX
+    assert state.player.moods["confidence"] == C.MOOD_MIN
+    assert set(state.player.moods) == set(C.MOODS), "未登记的 key 不该进 state"
 
 
 def test_gameconfig_roundtrip_and_defaults():

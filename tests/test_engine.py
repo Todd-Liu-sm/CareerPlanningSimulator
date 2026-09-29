@@ -327,6 +327,52 @@ def test_exhausting_ap_advances_semester():
     eng = new_engine()
     eng.play([c.id for c in eng.semester_cards()[: eng.ap]])
     assert eng.semester == 2
+
+
+def test_semester_summary_labels_the_semester_it_just_finished():
+    """结算结果必须标明"刚过完的是哪个学期"。
+
+    玩家反馈："大四下结束显示的是大三下结束的信息。"
+    根因：play() 在行动点花完后会立刻 advance() 到下一学期，界面上如果
+    去读 engine.semester_label()，拿到的是**新学期**的名字，
+    于是把刚过完的学期标错了。所以 CardResult 自带 semester/semester_label。
+    """
+    eng = new_engine(seed=21)
+    for expected in range(1, 4):
+        # 推进学期时可能抽到事件/抉择，先把待办清掉再出牌
+        if eng.pending_hook() is not None:
+            assert eng.apply_hook(eng.pending_hook().options[0].id).ok
+        if eng.pending_event() is not None:
+            assert eng.apply_event(0).ok
+        before = eng.semester
+        cards = eng.semester_cards()
+        result = eng.play([c.id for c in cards[: eng.ap]])
+        assert result.ok, result.rejected
+        assert result.semester == before, (
+            "结算结果标的学期是 %d，但刚过完的是 %d" % (result.semester, before)
+        )
+        assert result.semester_label == C.semester_label(before)
+        # 引擎本身已经推进了 —— 这正是必须把学期记在结果上的原因
+        assert eng.semester == before + 1
+        assert result.semester_label != eng.semester_label()
+
+
+def test_semester_summary_reports_fatigue():
+    """结算要带上本学期的疲劳账（玩家反馈"不知道疲惫值怎么提升的"）。"""
+    eng = new_engine(seed=22)
+    cards = [c for c in eng.semester_cards() if not (set(c.tags) & C.REST_TAGS)]
+    result = eng.play([c.id for c in cards[: eng.ap]])
+    assert result.ok
+    assert result.rest_points == 0
+    assert result.fatigue_delta > 0, "一点没休息，疲劳应该是涨的"
+
+    eng2 = new_engine(seed=23)
+    rest = [c for c in eng2.semester_cards() if set(c.tags) & C.REST_TAGS]
+    assert rest, "第一学期必须有休息卡"
+    result2 = eng2.play([rest[0].id])
+    assert result2.ok
+    assert result2.rest_points == 1
+    assert result2.fatigue_delta < result.fatigue_delta
     assert eng.ap == C.ap_for(2)
 
 

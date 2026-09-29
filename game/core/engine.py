@@ -338,7 +338,11 @@ class GameEngine(object):
         if invisible:
             return CardResult(rejected="这些选项本学期不可用")
 
-        result = CardResult()
+        result = CardResult(
+            # 先记下"这是哪个学期"，因为下面 advance() 会把 semester 推进一格
+            semester=self.state.semester,
+            semester_label=CFG.semester_label(self.state.semester),
+        )
         counts: dict[str, int] = {}
         base_flags = set(self.state.player.flags)
         for card_id in card_ids:
@@ -362,6 +366,13 @@ class GameEngine(object):
             else:
                 result.pending_event = self.state.pending_event
                 result.message = "这一学期过去了"
+        # advance() 里算好的学期末数据（疲劳净变化 / 提示）搬到结果对象上，
+        # 界面才有东西可显示
+        entry = self.state.history[-1] if self.state.history else None
+        if entry is not None and entry.get("semester") == result.semester:
+            result.fatigue_delta = int(entry.get("fatigue_delta", 0))
+            result.notes = list(entry.get("notes", ()))
+        result.rest_points = self.state.rest_points
         self._last_result = result
         return result
 
@@ -372,7 +383,11 @@ class GameEngine(object):
         if self.state.pending_event:
             return CardResult(rejected="先把眼前这件事处理完")
         base_flags = set(self.state.player.flags)
-        result = CardResult(ap_left=self.state.action_points)
+        result = CardResult(
+            ap_left=self.state.action_points,
+            semester=self.state.semester,
+            semester_label=CFG.semester_label(self.state.semester),
+        )
         spare = self.state.action_points
         if spare > 0:
             gains = {"mind": CFG.SPARE_AP_MIND * spare, "body": CFG.SPARE_AP_BODY * spare}
@@ -389,6 +404,10 @@ class GameEngine(object):
         self.state.action_points = 0
         self.advance(base_flags)
         result.pending_event = self.state.pending_event
+        entry = self.state.history[-1] if self.state.history else None
+        if entry is not None and entry.get("semester") == result.semester:
+            result.fatigue_delta = int(entry.get("fatigue_delta", 0))
+            result.notes = list(entry.get("notes", ()))
         return result
 
     def _absorb_card(self, card: Any, delta: EffectDelta) -> None:
@@ -541,8 +560,21 @@ class GameEngine(object):
             EFX.add_attrs(player, gains, self.state.fatigue)
             for flag in HOB.level_up_flags(hobby, old_level, new_level):
                 player.flags.add(flag)
+            # 爱好升级也让人过得好一点，并且回一点疲劳。
+            # 玩家反馈："爱好也应有一些额外的加分和减疲惫值。"
+            # 这组数值与结局无关，只影响参考状态和疲劳。
+            EFX.apply_moods(player, {
+                "happiness": 3 * (new_level - old_level),
+                "confidence": 1 * (new_level - old_level),
+            })
+            self.state.fatigue = max(
+                CFG.RESOURCE_MIN, self.state.fatigue - CFG.HOBBY_LEVEL_FATIGUE_RELIEF
+            )
             player.hobby_levels[hobby_id] = new_level
-            notes.append("%s 到了「%s」" % (hobby.name, HOB.level_title(hobby, new_level)))
+            notes.append(
+                "%s 到了「%s」（疲劳 -%d）"
+                % (hobby.name, HOB.level_title(hobby, new_level), CFG.HOBBY_LEVEL_FATIGUE_RELIEF)
+            )
         return notes
 
     def _settle_skilltree(self, semester: int, base_flags: set[str]) -> list[str]:

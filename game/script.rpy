@@ -209,6 +209,24 @@ label selfcheck:
         store.closed_categories.add("hobby")
 
     # ---------------- 四个浮层（切换 active_overlay 即可）
+    # 关键抉择浮层的"数据"自检：只验证内容，不截图。
+    #
+    # **为什么不截图**：hook_popup 是模态浮层，而 game_screen 已经在显示中
+    # （上面刚 show 过）。两个模态同时存在 → renpy.pause() 永久卡住，
+    # 自检停在这里、无报错、无截图、进程不退（踩过）。
+    # 也**不能**先 hide screen game_screen 再拍 —— 那正是 DESIGN.md 第 20 条
+    # 记的坑：反复 show/hide game_screen 会把 pause 卡死。
+    # 真实游戏里不会有这个问题：抉择浮层是在 game_screen 显示**之前**弹出的
+    # （见主循环），两者从不共存。这几屏靠人眼验收。
+    python:
+        _hv = CM.starts.HOOKS["k_sem5_direction"]
+        _fh = hook_view(CM.starts.HOOKS[CM.starts.FINAL_HOOK_ID])
+        CHK.check_log("selfcheck_report.txt", "定方向选项数=%d 覆盖赛道=%s" % (
+            len(_hv.options), sorted({o.track for o in _hv.options if o.track})))
+        CHK.check_log("selfcheck_report.txt", "收尾抉择带 resolve 的选项=%d/%d，示例把握=%s" % (
+            sum(1 for r in _fh["options"] if r["resolve"]), len(_fh["options"]),
+            [r["chance_text"] for r in _fh["options"] if r["resolve"]][:2]))
+
     $ active_overlay = "tree"
     $ CHK.shot_logged("07_skill_tree_locked")
 
@@ -238,6 +256,23 @@ label selfcheck:
 
     $ active_overlay = "attrs"
     $ CHK.shot_logged("12_attrs")
+
+    # 属性页要滚到底再拍一张：参考状态那一段在十项结局属性下面，
+    # 不滚下去就拍不到（只拍顶部会以为它没渲染出来）。
+    python:
+        engine.player.moods["happiness"] = 72
+        engine.player.moods["confidence"] = 61
+        engine.player.moods["social"] = 38
+        engine.player.moods["health"] = 55
+        # 直接把视图偏移拨到底部。用 try/except 是因为这依赖 Ren'Py 内部
+        # 的 viewport 注册表，拿不到就算了 —— 自检不该因为一张截图而失败。
+        try:
+            _vp = renpy.display.core.get_viewport("attrs")
+            _vp.yadjustment.change(_vp.yadjustment.range)
+        except Exception:
+            pass
+    $ renpy.pause(0.2)
+    $ CHK.shot_logged("12b_attrs_moods")
 
     # ---------------- 存档界面（玩家实际会看到的那个）
     # 这一屏必须验证：没有它玩家根本找不到存档入口。

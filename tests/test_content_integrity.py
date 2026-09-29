@@ -564,6 +564,61 @@ def test_four_hooks_on_distinct_semesters():
         assert hook.title and hook.text
 
 
+def test_direction_hook_covers_every_track():
+    """「该定方向了」必须给每条赛道一个入口。
+
+    玩家反馈："定方向应该显示全，怎么只有保研和考研。"
+    原来只有 保研 / 考研 / 两手抓 三个选项 —— 想走就业、考公、留学、科研的
+    玩家走到这一步会发现"没有我的路"。
+    """
+    hook = STR.HOOKS["k_sem5_direction"]
+    tracks = {o.track for o in hook.options if o.track}
+    missing = set(C.TRACKS) - tracks
+    assert not missing, "定方向缺少这些赛道的选项：%s" % sorted(missing)
+    # 除了六条赛道，还应该留一个"两手抓"的选项
+    assert len(hook.options) >= len(C.TRACKS)
+
+
+def test_final_hook_exposes_a_resolve_for_every_contest_track():
+    """大四收尾抉择要给每条"要争取"的赛道一个判定入口。
+
+    玩家反馈："结果陆续出来了没太看懂，为啥全是需要争取。"
+    现在界面上会显示把握度和判定属性（bridge.hook_view），
+    但前提是这些选项真的带 resolve 字段。
+    """
+    hook = STR.HOOKS[STR.FINAL_HOOK_ID]
+    resolved = {o.resolve for o in hook.options if getattr(o, "resolve", "")}
+    for track in ("kaoyan", "job", "gov", "abroad"):
+        assert track in resolved, "收尾抉择缺少 %s 的判定选项" % track
+    # 每个带 resolve 的选项都要有兜底 flag，否则失败时玩家一无所获
+    for option in hook.options:
+        if getattr(option, "resolve", ""):
+            assert getattr(option, "fallback_flags", ()), (
+                "%s 判定失败时没有兜底 flag" % option.id
+            )
+
+
+def test_hook_options_have_full_consequences():
+    """抉择选项要把代价写全：效果、疲劳、说明。
+
+    玩家反馈："选项选择后的后果应该全部显示出来，
+    目前我是不知道疲惫值是如何提升的。"
+    """
+    for hook in STR.HOOKS.values():
+        for option in hook.options:
+            assert option.text, option.id
+            assert option.desc, "%s 缺少 desc（界面会显示这段）" % option.id
+            assert option.effects or option.resources, (
+                "%s 既不给属性也不改变疲劳，玩家看不出代价" % option.id
+            )
+            for key in option.effects:
+                assert key in C.ATTRS or key in C.MOODS, (
+                    "%s 的 effects 引用了非法 key %s" % (option.id, key)
+                )
+            for key in option.resources:
+                assert key in C.RESOURCES, "%s 含非法资源 %s" % (option.id, key)
+
+
 def test_every_track_ending_flag_is_reachable():
     """每条赛道的结局 flag 都必须有来源，否则那条路永远打不出来。"""
     grantable: set[str] = set()

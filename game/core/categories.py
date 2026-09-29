@@ -22,6 +22,7 @@ CATEGORY_ORDER: tuple[str, ...] = (
     "leadership",
     "portfolio",
     "hobby",
+    "sport",
     "contest",
     "other",
 )
@@ -36,8 +37,9 @@ CATEGORY_NAMES: dict[str, str] = {
     "leadership": "组织与党团",
     "portfolio": "作品与项目",
     "hobby": "爱好",
+    "sport": "运动与休息",
     "contest": "竞赛",
-    "other": "其他",
+    "other": "心态与调整",
 }
 
 CATEGORY_HINTS: dict[str, str] = {
@@ -50,8 +52,12 @@ CATEGORY_HINTS: dict[str, str] = {
     "leadership": "班委、入党、组织活动",
     "portfolio": "项目、作品集、比赛作品",
     "hobby": "八类爱好，长线投入",
+    # 跑步 / 去健身房 / 打球 / 早睡 / 好好吃饭 都归这里。
+    # 玩家反馈："去健身房并到运动爱好里。" 健身本身就是爱好的一种，
+    # 埋在"其他"里等于让人找不到。
+    "sport": "跑步、健身、打球、作息饮食",
     "contest": "五类竞赛，逐阶往上打",
-    "other": "休息、娱乐、运动、心态",
+    "other": "心态、放松、给自己放假",
 }
 
 # 一个分类里最多同时显示几张卡（展开后）。
@@ -59,7 +65,6 @@ CATEGORY_HINTS: dict[str, str] = {
 CATEGORY_PREVIEW = 6
 
 # 默认展开哪些分类。玩家的注意力有限，全展开等于没分类。
-# 学业和"其他"（休息类）是最常用的两个入口。
 CATEGORY_DEFAULT_OPEN: tuple[str, ...] = ("academic", "other")
 
 # tag → 分类。**顺序有意义**：先匹配到的赢。
@@ -81,12 +86,14 @@ _TAG_RULES: tuple[tuple[str, str], ...] = (
     ("volunteer", "leadership"),
     ("project", "portfolio"),
     ("portfolio", "portfolio"),
-    # 休息 / 娱乐 / 运动 / 心态 归到"其他"。它们不是"往哪条路走"，
-    # 而是"怎么撑住"，所以刻意不占一个正式分类。
-    ("rest", "other"),
-    ("entertain", "other"),
-    ("sport", "other"),
+    # 运动 / 休息单独一类。
+    # **sport 必须排在 rest / mind 之前**：跑步、去健身房、坚持一个习惯
+    # 都带 sport，归到运动比归到"其他"合理得多。
+    ("sport", "sport"),
+    ("rest", "sport"),
+    # 只作用于心态的（冥想、接受不完美、别跟人比）留在这里
     ("mind", "other"),
+    ("entertain", "other"),
     ("study", "academic"),
     ("gpa", "academic"),
 )

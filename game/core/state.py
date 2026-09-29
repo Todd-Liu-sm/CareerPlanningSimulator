@@ -135,6 +135,20 @@ class CardResult:
     pending_event: str | None = None  # 若触发事件，事件 id
     pending_hook: str | None = None   # 若触发关键抉择，hook id
 
+    # **这是刚结算完的那个学期**，不是"现在所处的学期"。
+    #
+    # play() 在行动点花完后会立刻 advance() 到下一学期，所以等界面拿到
+    # 这个结果时 engine.semester 已经是下一个了。结算浮层如果去读
+    # engine.semester_label()，就会把刚过完的学期标成新学期 ——
+    # 玩家看到"大四上结束了"底下写着大三下的内容（真实反馈）。
+    semester: int = 0
+    semester_label: str = ""
+    # 本学期疲劳净变化（界面要显示"这一学期你有多累"）
+    fatigue_delta: int = 0
+    rest_points: int = 0
+    # 学期末的提示（没休息、属性投太满、爱好升级……）
+    notes: list[str] = field(default_factory=list)
+
     @property
     def ok(self) -> bool:
         return self.rejected is None
@@ -215,6 +229,11 @@ class PlayerState:
 
     hobbies: dict[str, int] = field(default_factory=dict)
     hobby_levels: dict[str, int] = field(default_factory=dict)
+    # 参考状态：和结局无关，只给玩家看"这四年过得怎么样"。
+    # 独立于 attrs，绝不参与任何门槛判定。
+    moods: dict[str, int] = field(
+        default_factory=lambda: {k: C.MOOD_START for k in C.MOODS}
+    )
 
     flags: set[str] = field(default_factory=set)
     awards: list[str] = field(default_factory=list)
@@ -284,6 +303,7 @@ class PlayerState:
             },
             "hobbies": dict(self.hobbies),
             "hobby_levels": dict(self.hobby_levels),
+            "moods": dict(self.moods),
             "flags": sorted(self.flags),
             "awards": list(self.awards),
             "contest_main": list(self.contest_main),
@@ -322,6 +342,13 @@ class PlayerState:
         player.hobbies = {k: int(v) for k, v in (data.get("hobbies") or {}).items()}
         # hobby_levels 是缓存，重算即可，不信任存档里的值
         player.hobby_levels = {}
+        # 参考状态：老存档没有这个字段（schema 2 之前），补齐默认值；
+        # 有的话只认登记过的 key，避免存档里塞进奇怪的东西。
+        _saved_moods = data.get("moods") or {}
+        player.moods = {
+            key: max(C.MOOD_MIN, min(C.MOOD_MAX, int(_saved_moods.get(key, C.MOOD_START))))
+            for key in C.MOODS
+        }
         player.flags = set(data.get("flags") or ())
         player.awards = list(data.get("awards") or ())
         player.contest_main = list(data.get("contest_main") or ())
