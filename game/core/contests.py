@@ -41,6 +41,26 @@ class Contest:
 
 
 # ================================================================ 竞赛大类
+#
+# `strengths` 是**属性权重**，结算时按它分配点数（不是装饰性字段）：
+#
+#     实际收益 = 阶梯基数 × CONTEST_STRENGTH_SCALE(2.0) × 品质乘数 × 权重
+#
+# 校赛的阶梯基数是 3.0，所以"权重和 = 3.0"意味着一场校赛大约给 18 点，
+# 单个属性最高 +12（会被 ATTR_MAX 和重复递减压住）。
+#
+# **每个大类的权重分布必须反映它真正练什么**（玩家反馈：
+# "打比赛只加作品分比较不真实，科研类可以加科研分，商赛、工程、综合类
+# 可以加点人脉和实习工作经验"）：
+#
+#   科研类  科研为主 —— 数学建模、学科竞赛拼的是研究和论文
+#   工程类  作品为主 + 科研 + 实习 —— 真做出东西，企业认这个
+#   商科类  作品 + 人脉 + 实习 —— 路演答辩认识人，案例写进简历
+#   人文类  外语 + 作品 + 影响力 —— 演讲辩论写作
+#   综合类  作品 + 人脉 + 影响力 + 实习 —— 创新创业类，什么都要碰一点
+#
+# 注意：这个大类的"主导属性"同时决定拿奖判定用哪个属性
+# （effects.contest_success_chance 取权重最高的那个）。
 
 
 CONTEST_LIST: tuple[Contest, ...] = (
@@ -50,7 +70,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
         full_name="科研类竞赛（数学建模、学科竞赛、实验创新）",
         majors=_ALL_MAJORS,
         tiers=("school", "prov", "national", "intl"),
-        strengths={"research": 2.0, "portfolio": 1.0, "gpa": 0.5},
+        strengths={"research": 1.4, "portfolio": 1.0, "gpa": 0.6},
         note="组队三到五人，先校内选拔再逐级往上打；国赛要交完整论文并现场答辩。",
         certs=("数学建模证书",),
     ),
@@ -60,7 +80,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
         full_name="工程类竞赛（设计、制造、成图、结构）",
         majors=("cs", "mech", "civil", "sci", "ocean", "med"),
         tiers=("school", "prov", "national", "intl"),
-        strengths={"portfolio": 2.0, "research": 1.0, "intern": 0.5},
+        strengths={"portfolio": 1.3, "research": 0.8, "intern": 0.9},
         note="要真的做出东西：方案、图纸、样机、现场演示，评审最看重能不能跑起来。",
         certs=("CAD/CAE 证书", "工程训练证书"),
     ),
@@ -70,7 +90,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
         full_name="商科类竞赛（商业策划、案例分析、金融模拟）",
         majors=("biz", "hum", "cs", "sci"),
         tiers=("school", "prov", "national", "intl"),
-        strengths={"portfolio": 2.0, "network": 1.0, "exam": 0.5},
+        strengths={"portfolio": 1.1, "network": 1.0, "intern": 0.9},
         note="交策划书加现场路演，答辩问得很细，财务模型要能自圆其说。",
         certs=("初级会计", "证券从业资格"),
     ),
@@ -80,7 +100,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
         full_name="人文类竞赛（外语、辩论、模拟法庭、写作）",
         majors=("hum", "biz", "med", "ocean"),
         tiers=("school", "prov", "national", "intl"),
-        strengths={"english": 1.5, "portfolio": 1.5, "leadership": 0.5},
+        strengths={"english": 1.2, "portfolio": 1.0, "leadership": 0.8},
         note="外语类是现场演讲加即兴问答，辩论与模拟法庭都是团队对抗制。",
         certs=("专业四级/八级", "普通话等级"),
     ),
@@ -90,7 +110,7 @@ CONTEST_LIST: tuple[Contest, ...] = (
         full_name="综合类竞赛（创新创业、挑战杯这类全校都能报的）",
         majors=_ALL_MAJORS,
         tiers=("school", "prov", "national", "intl"),
-        strengths={"portfolio": 1.5, "network": 1.0, "leadership": 1.0},
+        strengths={"portfolio": 1.1, "network": 0.8, "leadership": 0.6, "intern": 0.5},
         note="门槛低、容错高，任何专业都能报；想拿国奖得有一个真能落地的项目。",
     ),
 )

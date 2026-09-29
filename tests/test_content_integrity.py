@@ -116,6 +116,104 @@ def test_contest_strengths_are_legal():
             assert value > 0
 
 
+def test_contest_cards_carry_strengths():
+    """竞赛卡必须带上所属大类的 strengths。
+
+    **这条真的挂过**：`_build_contest_cards` 只传了 contest_id 却没传 strengths，
+    于是 `effects._base_and_units` 回落到默认的 `{"portfolio": 1.0}` ——
+    **所有竞赛都只加作品分**。玩家反馈："打比赛只加作品分比较不真实。"
+    生成器写在注释里的意图没有落到数据上，而没有任何断言盯着这件事。
+    """
+    for card in ACT.contest_cards():
+        contest = CON.CONTESTS[card.contest_id]
+        assert card.strengths, (
+            "%s 没有 strengths，结算时会回落成默认的 portfolio —— "
+            "这条竞赛线的加点就全错了" % card.id
+        )
+        assert card.strengths == contest.strengths, (
+            "%s 的 strengths 和所属大类 %s 不一致" % (card.id, card.contest_id)
+        )
+
+
+def test_each_contest_category_trains_its_own_attributes():
+    """每个竞赛大类的加点要反映它真正练什么。
+
+    玩家要求："科研类可以加科研分，商赛、工程、综合类可以加点人脉和实习工作经验。"
+    """
+    from game.core.state import GameConfig, GameState
+    from game.core import effects as E
+    import random as _random
+
+    state = GameState(seed=1, rng=_random.Random(1), cfg=GameConfig())
+    state.semester = 3
+
+    def gain_for(contest_id: str) -> dict[str, int]:
+        card = next(
+            c for c in ACT.contest_cards()
+            if c.contest_id == contest_id and c.contest_tier == "school"
+        )
+        return E.attr_gain(card, state.player, 0)
+
+    # 科研类：科研必须是第一
+    g = gain_for("c_research")
+    assert max(g, key=lambda k: g[k]) == "research", f"科研类竞赛没给科研：{g}"
+
+    # 工程类：要有实习
+    g = gain_for("c_engineering")
+    assert g.get("intern", 0) > 0, f"工程类竞赛没给实习：{g}"
+
+    # 商科类：要有实习和人脉
+    g = gain_for("c_business")
+    assert g.get("intern", 0) > 0, f"商科类竞赛没给实习：{g}"
+    assert g.get("network", 0) > 0, f"商科类竞赛没给人脉：{g}"
+
+    # 综合类：要有实习和人脉
+    g = gain_for("c_comprehensive")
+    assert g.get("intern", 0) > 0, f"综合类竞赛没给实习：{g}"
+    assert g.get("network", 0) > 0, f"综合类竞赛没给人脉：{g}"
+
+    # 人文类：外语优先
+    g = gain_for("c_humanities")
+    assert g.get("english", 0) > 0, f"人文类竞赛没给外语：{g}"
+
+    # 每个大类最多覆盖 4 个属性，别撒胡椒面
+    for contest in CON.CONTEST_LIST:
+        assert len(contest.strengths) <= 4, f"{contest.id} 的 strengths 太散"
+
+
+def test_contest_tier_totals_stay_sane():
+    """竞赛的收益尺度不能失控。
+
+    **这条也真的挂过**：权重和从 2.0 调到 3.0 之后没重算阶梯基数，
+    国赛一张卡直接给 45 点、国际赛 63 点 —— 两个行动点就能顶满一个属性，
+    整套门槛体系废掉。锚点：一张普通行动卡 4-6 点，单属性口径上限 32 点。
+    """
+    for contest in CON.CONTEST_LIST:
+        weight_sum = sum(contest.strengths.values())
+        for tier in contest.tiers:
+            card = next(
+                c for c in ACT.contest_cards()
+                if c.contest_id == contest.id and c.contest_tier == tier
+            )
+            base = (
+                C.CONTEST_TIER_EFFECT[tier]
+                * C.CONTEST_STRENGTH_SCALE
+                * C.RARITY_MULT.get(card.rarity, 1.0)
+            )
+            total = base * weight_sum
+            assert 5 <= total <= 40, (
+                "%s/%s 一张卡给 %.0f 点，超出合理区间 5-40" % (contest.id, tier, total)
+            )
+        # 一条线从校赛打到国际赛的总量也要有上限
+        ladder = sum(
+            C.CONTEST_TIER_EFFECT[t] * C.CONTEST_STRENGTH_SCALE * weight_sum
+            for t in contest.tiers
+        )
+        assert ladder <= 100, (
+            "%s 打满整条阶梯给 %.0f 点，太多（4 个行动点换掉大半局）" % (contest.id, ladder)
+        )
+
+
 def test_contest_tiers_are_ordered_subsequence():
     for contest in CON.CONTEST_LIST:
         assert len(contest.tiers) >= 2, f"{contest.id} 只有 {len(contest.tiers)} 个阶梯"

@@ -41,12 +41,15 @@ class ActionCard:
     contest_id: str
     contest_tier: str
     note: str
+    # 竞赛卡的属性权重。普通卡为空 —— 它们的 effects 值就是点数。
+    strengths: dict
 
 
 def _mk(cid, name, rarity, lo, hi, text, effects, *, major="", tags=(),
         flags=(), gate=None, hobby=None, affinity=(), note="",
-        contest_id="", contest_tier="", resources=None, track=""):
-    """构造一张卡。专业专属卡传 major，竞赛阶梯卡传 contest_id。"""
+        contest_id="", contest_tier="", resources=None, track="",
+        strengths=None):
+    """构造一张卡。专业专属卡传 major，竞赛阶梯卡传 contest_id + strengths。"""
     return ActionCard(
         id=cid, name=name, text=text, rarity=rarity,
         sem_lo=lo, sem_hi=hi,
@@ -58,6 +61,7 @@ def _mk(cid, name, rarity, lo, hi, text, effects, *, major="", tags=(),
         start_affinity=tuple(affinity),
         contest_id=contest_id, contest_tier=contest_tier,
         note=note,
+        strengths=dict(strengths or {}),
     )
 
 
@@ -92,6 +96,11 @@ def _build_contest_cards():
                 contest_id=contest.id,
                 contest_tier=tier,
                 note=contest.note if tier == "school" else "",
+                # **必须传**：结算时按这个权重分配属性点。
+                # 不传的话 effects.attr_gain 会回落到 {"portfolio": 1.0}，
+                # 于是所有竞赛都只加作品分（玩家反馈：
+                # "打比赛只加作品分比较不真实"）。
+                strengths=contest.strengths,
             ))
     return tuple(cards)
 

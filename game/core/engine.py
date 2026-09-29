@@ -754,10 +754,39 @@ class GameEngine(object):
                     "dedicated": contest.id in dedicated,
                     "is_main": contest.id in player.contest_main,
                     "progress": self._contest_progress(contest, best),
+                    # 这个大类练什么：界面要写清楚，玩家才知道该不该打
+                    # （玩家反馈："打比赛只加作品分比较不真实"，
+                    #   修好加点之后得让人看得见）。
+                    "trains": self.contest_trains(contest.id),
                 }
             )
         rows.sort(key=lambda row: (not row["is_main"], not row["dedicated"], row["name"]))
         return rows
+
+    def contest_trains(self, contest_id: str) -> str:
+        """这个竞赛大类主要练哪几个属性，供界面显示。"""
+        contest = CON.CONTESTS.get(contest_id)
+        if contest is None:
+            return ""
+        ranked = sorted(contest.strengths.items(), key=lambda kv: -kv[1])
+        return "・".join(CFG.ATTR_SHORT.get(key, key) for key, _ in ranked)
+
+    def contest_reward_text(self, contest_id: str, tier: str) -> str:
+        """某一大类某一阶拿奖大约给什么（用国赛那档的预估点数）。"""
+        contest = CON.CONTESTS.get(contest_id)
+        if contest is None:
+            return ""
+        base = (
+            CFG.CONTEST_TIER_EFFECT.get(tier, 1.0)
+            * CFG.CONTEST_STRENGTH_SCALE
+            * CFG.RARITY_MULT.get("common", 1.0)
+        )
+        parts = []
+        for key, weight in sorted(contest.strengths.items(), key=lambda kv: -kv[1]):
+            points = int(round(base * weight))
+            if points > 0:
+                parts.append("%s+%d" % (CFG.ATTR_SHORT.get(key, key), points))
+        return " ・ ".join(parts)
 
     @staticmethod
     def _contest_progress(contest: Any, best: str) -> float:

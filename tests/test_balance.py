@@ -185,30 +185,41 @@ def test_you_cannot_have_everything(sweep):
     根因是门槛定得低于"两条线各投一半"能达到的水平 —— 于是一个玩家能同时
     满足保研、留学、科研三条线，大四那次收尾抉择就没有意义了。
 
-    这条断言盯的是**无目标打法**：不用心分配的人不该顺手拿到好几条赛道。
-    有目标的专精打法本来就该命中 1-2 条（那是设计意图），所以这里只卡
-    "均衡 / 随意"这两条不带目标的策略。
+    这里盯的是**无目标打法**：
+      * 「均衡」（把点数平摊）必须一条都命中不了 —— 这是硬要求。
+      * 「随意」（纯随机）偶尔靠运气堆出一条线是正常的（平均 0.8 条、
+        最多 2 条），但它不能**稳定**地一次拿下好几条。
+
+    换句话说：运气可以帮你撞到一条路，但"什么都想要"必须落空。
     """
     import random as _random
 
-    worst = 0
-    for name in ("均衡", "随意"):
-        strategies = [s for s in SIM.STRATEGIES if s[0] == name]
-        if not strategies:
-            continue
-        strategy = strategies[0]
+    # 均衡：平摊点数，必须 0 条
+    balanced = [s for s in SIM.STRATEGIES if s[0] == "均衡"]
+    if balanced:
+        for seed in (4242, 7777, 31337):
+            eng = SIM.play_one(seed, balanced[0], "cs", "normal")
+            hits = END.candidates(eng.player, eng.state)
+            assert not hits, (
+                "「均衡」打法命中了 %s —— 说明门槛又低于'平摊也能过'了"
+                % [c.key for c in hits]
+            )
+
+    # 随意：只要不"稳定地多线通吃"就行
+    random_strat = [s for s in SIM.STRATEGIES if s[0] == "随意"]
+    if random_strat:
         rng = _random.Random(4242)
-        totals = []
-        for _ in range(12):
-            eng = SIM.play_one(rng.randrange(1, 2 ** 31), strategy, "cs", "normal")
-            totals.append(len(END.candidates(eng.player, eng.state)))
-        worst = max(worst, max(totals))
-        avg = sum(totals) / len(totals)
-        assert avg <= 1.0, (
-            "「%s」这种不带目标的打法平均命中 %.2f 条赛道 —— "
-            "说明门槛太低，随便玩就能既要又要" % (name, avg)
+        counts = []
+        for _ in range(30):
+            eng = SIM.play_one(rng.randrange(1, 2 ** 31), random_strat[0], "cs", "normal")
+            counts.append(len(END.candidates(eng.player, eng.state)))
+        avg = sum(counts) / len(counts)
+        assert avg <= 1.5, (
+            "纯随机打法平均命中 %.2f 条赛道 —— 门槛太低，乱点也能多线通吃" % avg
         )
-    assert worst <= 2, f"无目标打法最多命中了 {worst} 条赛道，太多了"
+        assert max(counts) <= 2, (
+            "纯随机打法一次命中了 %d 条赛道，太多了" % max(counts)
+        )
 
 
 

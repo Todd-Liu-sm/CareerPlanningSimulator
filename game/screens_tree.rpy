@@ -310,6 +310,12 @@ screen contest_row(row):
                 text "[row['note']]" style "t_tiny" color c_text_dim
             hbox:
                 spacing 10
+                # 这个大类练什么 —— 玩家要看得出"打它值不值"。
+                # 后台按 strengths 分配加点，前台必须写出来，否则玩家只会
+                # 以为所有比赛都加作品分（就是之前那个 bug 的观感）。
+                text "主要提升：[row['trains']]" style "t_tiny" color c_accent
+            hbox:
+                spacing 10
                 text "最高战绩：" style "t_tiny" color c_text_faint
                 if row["best"]:
                     text "[row['best_label']]" style "t_tiny" color _tier_color
