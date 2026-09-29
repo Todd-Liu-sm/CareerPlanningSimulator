@@ -70,9 +70,19 @@ def test_engine_serialize_roundtrip_preserves_everything():
 
 
 def test_loaded_engine_can_keep_playing():
-    """读档之后必须还能继续出牌、结算、推进学期。"""
+    """读档之后必须还能继续出牌、结算、推进学期。
+
+    注意：引擎把"待处理的随机事件 / 关键抉择"也一起存了。如果存档时正好停在
+    事件弹窗上，读档后第一件事必须是处理那个事件，而不是直接出牌 ——
+    引擎会拒绝并提示"先把眼前这件事处理完"。所以这里先把待办清掉。
+    """
     eng = _played()
     clone = ENG.GameEngine.deserialize(eng.serialize())
+
+    if clone.pending_hook() is not None:
+        assert clone.apply_hook(clone.pending_hook().options[0].id).ok
+    if clone.pending_event() is not None:
+        assert clone.apply_event(0).ok
 
     cards = clone.semester_cards()
     assert cards, "读档后应该还能看到可选卡"

@@ -182,6 +182,32 @@ label selfcheck:
 
     $ CHK.shot_logged("06_game_screen")
 
+    # 展开"爱好"和"竞赛"两个分类再拍一次，验证：
+    #   * 分类折叠 / 展开的两种画法
+    #   * 爱好卡的等级轨道（几级、还差几次升级）
+    #   * 竞赛卡的阶梯门控
+    python:
+        store.open_categories.update(["hobby", "contest"])
+        store.closed_categories.discard("hobby")
+        store.closed_categories.discard("contest")
+    $ CHK.shot_logged("06b_categories_hobby_contest")
+    python:
+        store.open_categories.discard("hobby")
+        store.open_categories.discard("contest")
+        store.closed_categories.update(["hobby", "contest"])
+
+    # 造一点爱好进度，让等级轨道不是全 0
+    python:
+        engine.player.hobbies["sport"] = 60
+        engine.player.hobbies["reading"] = 15
+        engine.player.hobbies_invested.update(["sport", "reading"])
+        store.open_categories.add("hobby")
+        store.closed_categories.discard("hobby")
+    $ CHK.shot_logged("06c_hobby_levels")
+    python:
+        store.open_categories.discard("hobby")
+        store.closed_categories.add("hobby")
+
     # ---------------- 四个浮层（切换 active_overlay 即可）
     $ active_overlay = "tree"
     $ CHK.shot_logged("07_skill_tree_locked")

@@ -46,6 +46,12 @@ default active_overlay = ""
 default selected_node = ""
 default toast = ""
 
+# 行动卡分类的折叠状态。
+# 两套集合是有意的：空集表示"还没手动调过"，这时用 categories.CATEGORY_DEFAULT_OPEN
+# 的默认值。一旦玩家点过某个分类，它就进入其中一个集合，不再受默认值影响。
+default open_categories = set()
+default closed_categories = set()
+
 # 已解锁结局（跨存档保留）
 default persistent.seen_endings = set()
 default persistent.games_played = 0
@@ -334,6 +340,46 @@ init python:
             rows = [row for row in rows if row["invested"]]
         return rows
 
+    def hobby_track(hobby_key):
+        """某个爱好的等级轨道，给行动卡上的等级显示用。
+
+        玩家反馈："所有爱好类卡牌都要一直存在，另外可以设置多个级别，
+        修完就可以选下一个。" 所以卡上要直接看得出"现在几级、还差几次升级"，
+        而不是只写一句描述。
+        """
+        eng = store.engine
+        if eng is None:
+            return None
+        rows = [r for r in eng.hobby_rows() if r["id"] == hobby_key]
+        if not rows:
+            return None
+        row = rows[0]
+        level = row["level"]
+        maxed = level >= C.HOBBY_MAX_LEVEL
+        thresholds = C.HOBBY_LEVEL_THRESHOLDS
+        # 还差几次行动升级：本级的门槛差 / 每次投入的经验，向上取整
+        need = 0
+        if not maxed:
+            target = thresholds[min(level + 1, len(thresholds) - 1)]
+            gap = max(0, target - row["xp"])
+            need = (gap + C.HOBBY_XP_PER_ACTION - 1) // C.HOBBY_XP_PER_ACTION
+        return {
+            "key": hobby_key,
+            "name": row["name"],
+            "level": level,
+            "title": row["level_title"],
+            "max_level": C.HOBBY_MAX_LEVEL,
+            "maxed": maxed,
+            "ratio": row["ratio"],
+            "need": need,
+            "xp": row["xp"],
+            "next": row["next"],
+            "label": (
+                "%s ・ 满级" % row["level_title"] if maxed
+                else "Lv%d %s ・ 再投 %d 次升级" % (level, row["level_title"], need)
+            ),
+        }
+
     def visible_cards():
         """本学期可见卡，附上"投一次会涨什么"和"已经投过几次"。"""
         eng = store.engine
@@ -356,8 +402,63 @@ init python:
                 "is_contest": bool(card.contest_id),
                 "track": card.track,
                 "note": card.note,
+                # 爱好卡带等级轨道；别的卡是 None
+                "hobby": hobby_track(card.hobby[0]) if card.hobby else None,
+                # 折叠分组用
+                "category": CM.categories.category_of(card),
             })
         return rows
+
+    def card_groups():
+        """本学期可见卡按分类分组，供界面折叠渲染。"""
+        rows = visible_cards()
+        buckets = {}
+        for row in rows:
+            buckets.setdefault(row["category"], []).append(row)
+        out = []
+        for key in CM.categories.CATEGORY_ORDER:
+            items = buckets.get(key)
+            if not items:
+                continue
+            out.append({
+                "key": key,
+                "name": CM.categories.CATEGORY_NAMES.get(key, key),
+                "hint": CM.categories.CATEGORY_HINTS.get(key, ""),
+                "rows": items,
+                "count": len(items),
+                "default_open": key in CM.categories.CATEGORY_DEFAULT_OPEN,
+            })
+        return out
+
+    def category_expanded(key):
+        """这个分类现在是展开还是折叠。
+
+        未手动点过的分类用 C.CATEGORY_DEFAULT_OPEN 的默认值。
+        """
+        if key in store.open_categories:
+            return True
+        if key in store.closed_categories:
+            return False
+        return key in CM.categories.CATEGORY_DEFAULT_OPEN
+
+    def toggle_category(key):
+        """展开 / 折叠一个分类。首次点击时把它从"默认"状态翻过来。"""
+        if category_expanded(key):
+            store.open_categories.discard(key)
+            store.closed_categories.add(key)
+        else:
+            store.closed_categories.discard(key)
+            store.open_categories.add(key)
+
+    def expand_all_categories():
+        for key in CM.categories.CATEGORY_ORDER:
+            store.open_categories.add(key)
+            store.closed_categories.discard(key)
+
+    def collapse_all_categories():
+        for key in CM.categories.CATEGORY_ORDER:
+            store.closed_categories.add(key)
+            store.open_categories.discard(key)
 
     def contest_rows():
         eng = store.engine

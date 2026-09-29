@@ -131,40 +131,87 @@ def test_attr_totals_stay_in_human_range(sweep):
 
 
 def test_a_focused_build_can_actually_pass_a_gate(sweep):
-    """专精一条线必须真的能过门槛，否则所有玩法都会掉进兜底结局。
+    """专精一条线必须真的能过门槛，**而且每个专业都要能过**。
 
-    这条曾经真的挂过：卡池每个属性只有 3-5 张卡、合计 11-17 点，
-    而门槛要 20-26 点 —— **一条结局都够不着**。修法是加深卡池而不是降门槛。
+    这条曾经真的挂过两次：
+      1. 卡池每个属性只有 3-5 张卡、合计 11-17 点，而门槛要 20-26 点 ——
+         一条结局都够不着。修法是加深卡池而不是降门槛。
+      2. 门槛按"最强的专业"来定：实习经历 cs/biz 能到 32，其余专业只有 30，
+         于是 job 门槛 32 让六个专业永远打不出秋招落定。
+         修法是按**最弱的专业**定门槛。
+
+    所以这里逐专业、逐属性算上限，任何一组够不着就报错。
     """
     from game.core import actions as ACT
 
-    for attr in C.ATTRS:
+    def ceiling(major_id: str, attr: str) -> int:
         gains = sorted(
             (
                 int(card.effects.get(attr, 0) * C.RARITY_MULT.get(card.rarity, 1.0))
-                for card in ACT.for_major("cs")
+                for card in ACT.for_major(major_id)
                 if not card.contest_id and card.effects.get(attr, 0) > 0
             ),
             reverse=True,
         )
-        ceiling = min(C.ATTR_MAX, sum(gains[:8]))
-        # 引用这个属性的最高门槛
-        needs = [
-            gate[attr]
-            for gate in list(C.ENDING_GATES.values())
-            + [g for alts in C.ENDING_ALTS.values() for g in alts.values()]
-            if attr in gate
-        ]
-        if not needs:
+        return min(C.ATTR_MAX, sum(gains[:8]))
+
+    failures = []
+    for major_id in MAJ.all_ids():
+        for track in C.TRACKS:
+            groups = C.ENDING_ALTS.get(track) or {"标准": C.ENDING_GATES[track]}
+            # 一条赛道有多组门槛，只要有一组够得着就行
+            reachable = False
+            best_gap = None
+            for gate in groups.values():
+                gap = max(
+                    (need - ceiling(major_id, attr) for attr, need in gate.items()),
+                    default=0,
+                )
+                if gap <= 0:
+                    reachable = True
+                    break
+                if best_gap is None or gap < best_gap:
+                    best_gap = gap
+            if not reachable:
+                failures.append("%s 打不出 %s（最接近的一组还差 %d 点）"
+                                % (major_id, C.ENDING_NAMES[track], best_gap))
+    assert not failures, "这些专业/赛道组合永远过不了门槛：\n  " + "\n  ".join(failures)
+
+
+def test_you_cannot_have_everything(sweep):
+    """**"既要又要"必须做不到。**
+
+    玩家反馈："太简单了，可以既要又要，模拟结果没有参考价值。"
+    根因是门槛定得低于"两条线各投一半"能达到的水平 —— 于是一个玩家能同时
+    满足保研、留学、科研三条线，大四那次收尾抉择就没有意义了。
+
+    这条断言盯的是**无目标打法**：不用心分配的人不该顺手拿到好几条赛道。
+    有目标的专精打法本来就该命中 1-2 条（那是设计意图），所以这里只卡
+    "均衡 / 随意"这两条不带目标的策略。
+    """
+    import random as _random
+
+    worst = 0
+    for name in ("均衡", "随意"):
+        strategies = [s for s in SIM.STRATEGIES if s[0] == name]
+        if not strategies:
             continue
-        hardest = max(needs)
-        assert ceiling >= hardest, (
-            "%s（%s）专精 8 张卡只能到 %d，过不了门槛 %d"
-            % (attr, C.ATTR_NAMES[attr], ceiling, hardest)
+        strategy = strategies[0]
+        rng = _random.Random(4242)
+        totals = []
+        for _ in range(12):
+            eng = SIM.play_one(rng.randrange(1, 2 ** 31), strategy, "cs", "normal")
+            totals.append(len(END.candidates(eng.player, eng.state)))
+        worst = max(worst, max(totals))
+        avg = sum(totals) / len(totals)
+        assert avg <= 1.0, (
+            "「%s」这种不带目标的打法平均命中 %.2f 条赛道 —— "
+            "说明门槛太低，随便玩就能既要又要" % (name, avg)
         )
+    assert worst <= 2, f"无目标打法最多命中了 {worst} 条赛道，太多了"
 
 
-def test_gate_attributes_never_saturate(sweep):
+
     """**结局门槛引用到的属性**不能在绝大多数局里都顶到硬顶。
 
     为什么只盯这几个：门槛属性一旦人人满值，赛道之间就没有取舍了 ——
@@ -195,11 +242,18 @@ def test_gate_attributes_never_saturate(sweep):
 
 
 def test_ending_candidates_are_nonempty_for_most_runs():
-    """至少八成局要命中一条正经赛道。"""
+    """至少七成局要命中一条正经赛道。
+
+    为什么不是更高：门槛改成"必须专精"之后，**故意的无目标打法**（"均衡"
+    和"随意"两条策略加起来占 1/4 的样本）本来就该落进兜底结局。这是设计意图，
+    不是失败 —— 兜底结局的存在意义就是"你没往任何方向使劲"。
+    真正要守住的是"想清楚了的人一定打得出"，那条由
+    test_a_focused_build_can_actually_pass_a_gate 逐专业盯着。
+    """
     hits = 0
     for index in range(40):
         strategy = SIM.STRATEGIES[index % len(SIM.STRATEGIES)]
         eng = SIM.play_one(7001 + index * 131, strategy, "cs", "normal")
         if END.candidates(eng.player, eng.state):
             hits += 1
-    assert hits >= 32, f"40 局里只有 {hits} 局命中了正经赛道"
+    assert hits >= 28, f"40 局里只有 {hits} 局命中了正经赛道"

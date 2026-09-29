@@ -106,10 +106,22 @@ def test_all_majors_can_begin():
 
 
 def test_semester_cards_are_capped_and_include_fallback():
+    """候选卡有上限，但**爱好卡和竞赛卡不受上限影响**。
+
+    那两类是长期线：爱好要反复投才升级，校赛是打开整条竞赛线的入口，
+    把它们截掉就等于玩家永远选不到（真的发生过 —— 爱好卡全是 common，
+    池子深了之后一张都进不了前 14）。
+    """
     eng = new_engine()
     cards = eng.semester_cards()
-    assert 6 <= len(cards) <= ENG.VISIBLE_CARDS + 4
     assert cards, "第一学期必须有牌可打"
+    # 14 张按品质排的 + 8 张爱好 + 竞赛校赛 + 少量保底
+    assert len(cards) <= ENG.VISIBLE_CARDS + 8 + 12 + ENG._FALLBACK_MAX_EXTRA
+    assert len(cards) >= 8
+
+    ids = {c.id for c in cards}
+    assert any(c.hobby for c in cards), "爱好卡必须永远可选"
+    assert any(c.contest_id for c in cards), "校赛卡必须永远可选（它是竞赛线的入口）"
 
 
 def test_every_semester_has_cards_for_every_major():
@@ -149,7 +161,82 @@ def test_contest_cards_differ_by_major():
     assert cs_contests != ocean_contests, "两个专业看见的竞赛不该完全一样"
 
 
-def test_card_gate_blocks_unavailable_card():
+def test_hobby_cards_are_always_visible_and_grant_xp():
+    """爱好卡必须永远可选，而且投了真的涨经验。
+
+    玩家反馈："爱好功能似乎没法用，选了也不会加经验。"
+    根因是候选卡按品质截取前 14 张，而爱好卡全是 common —— 池子深了之后
+    它们一张都进不了列表，玩家根本选不到（于是看起来像"选了没反应"）。
+    """
+    for sem in (1, 4, 8):
+        eng = new_engine(seed=11)
+        eng.state.semester = sem
+        eng.state.action_points = C.ap_for(sem)
+        visible = [c for c in eng.semester_cards() if c.hobby]
+        assert len(visible) == len(C.HOBBY_KEYS), (
+            "第 %d 学期只有 %d 张爱好卡可见，应该 8 张都在"
+            % (sem, len(visible))
+        )
+
+    eng = new_engine(seed=11)
+    card = next(c for c in eng.semester_cards() if c.hobby)
+    key, xp = card.hobby
+    assert eng.player.hobby_xp(key) == 0
+    result = eng.play([card.id])
+    assert result.ok, result.rejected
+    assert eng.player.hobby_xp(key) == xp, "投了爱好卡却没涨经验"
+    assert key in eng.player.hobbies_invested
+
+
+def test_hobby_levels_advance_by_investing():
+    """爱好要能一路升级：反复投同一张卡，等级跟着涨。
+
+    玩家反馈："可以设置多个级别，修完就可以选下一个。"
+    """
+    eng = new_engine(seed=11)
+    card = next(c for c in eng.semester_cards() if c.hobby)
+    key, per = card.hobby
+    seen = []
+    for _ in range(8):
+        eng.state.action_points = C.ap_for(eng.state.semester)
+        assert eng.play([card.id]).ok
+        seen.append(eng.player.hobby_level(key))
+    assert seen[0] == 1, "第一次投入就该到 Lv1"
+    assert seen[-1] == C.HOBBY_MAX_LEVEL, "投满 8 次应该到 Lv4"
+    assert seen == sorted(seen), f"等级不能倒退：{seen}"
+
+
+def test_contest_tier_requires_winning_the_previous_one():
+    """校赛没赢就不能打省赛 —— 只是"打过"不算。
+
+    玩家反馈："竞赛类卡牌应该也要遵循顺序，校赛未通过就不能往后打。"
+    原来的判断用的是 contest_best（只在拿奖时写入），配合 `!= prev` 的写法，
+    未通过校赛时 contest_best 是空的，`!= "school"` 反而为真 —— 省赛照样出现。
+    """
+    eng = new_engine(seed=7)
+    eng.state.semester = 6
+    eng.state.action_points = C.ap_for(6)
+
+    def tiers():
+        return {
+            c.contest_tier
+            for c in eng.semester_cards()
+            if c.contest_id and c.contest_id == "c_research"
+        }
+
+    assert "school" in tiers(), "校赛应该随时能打"
+    assert "prov" not in tiers(), "没赢校赛就不该出现省赛"
+    assert "national" not in tiers(), "没赢省赛就不该出现国赛"
+
+    eng.player.contest_best["c_research"] = "school"
+    assert "prov" in tiers(), "赢了校赛才出现省赛"
+    assert "national" not in tiers()
+
+    eng.player.contest_best["c_research"] = "prov"
+    assert "national" in tiers(), "赢了省赛才出现国赛"
+
+
+
     eng = new_engine()
     gated = None
     for card in ENG.ACT.ALL_CARDS:

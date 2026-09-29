@@ -26,6 +26,7 @@ def boot():
 
     try:
         from game.core import actions as _actions
+        from game.core import categories as _categories
         from game.core import config as _config
         from game.core import contests as _contests
         from game.core import effects as _effects
@@ -39,6 +40,7 @@ def boot():
         from game.core import state as _state
     except ImportError:
         from core import actions as _actions              # type: ignore
+        from core import categories as _categories        # type: ignore
         from core import config as _config                # type: ignore
         from core import contests as _contests            # type: ignore
         from core import effects as _effects              # type: ignore
@@ -55,6 +57,7 @@ def boot():
 
     modules = type("CoreModules", (object,), {})()
     modules.actions = _actions
+    modules.categories = _categories
     modules.config = _config
     modules.contests = _contests
     modules.effects = _effects

@@ -10,6 +10,7 @@ from collections import Counter
 import pytest
 
 from game.core import actions as ACT
+from game.core import categories as CAT
 from game.core import config as C
 from game.core import contests as CON
 from game.core import events as EVT
@@ -277,6 +278,42 @@ def test_contest_cards_are_wellformed():
         assert "contest" in card.tags
         assert card.sem_lo == C.CONTEST_TIER_EARLIEST[card.contest_tier]
         assert card.sem_hi == C.TOTAL_SEMESTERS
+
+
+# ================================================================ 分类
+
+
+def test_every_card_gets_a_category():
+    """每张卡都要分得进一个分类 —— 界面上分类是可折叠的分组，
+    分不进去的卡会掉出列表，玩家就永远看不到它。"""
+    for card in ACT.ALL_CARDS:
+        key = CAT.category_of(card)
+        assert key in CAT.CATEGORY_ORDER, f"{card.id} 分到了未登记的分类 {key}"
+
+
+def test_categories_are_all_used():
+    """每个登记过的分类都该有卡，否则界面上会出现空标题。"""
+    used = {CAT.category_of(c) for c in ACT.ALL_CARDS}
+    unused = [k for k in CAT.CATEGORY_ORDER if k not in used]
+    assert not unused, f"这些分类一张卡都没有：{unused}"
+
+
+def test_grouping_preserves_every_card():
+    """分组不能丢卡，也不能重复。"""
+    groups = CAT.group_cards(list(ACT.ALL_CARDS))
+    seen = [c.id for g in groups for c in g["cards"]]
+    assert len(seen) == len(ACT.ALL_CARDS), "分组后有卡丢失"
+    assert len(set(seen)) == len(seen), "分组后有卡重复"
+    for group in groups:
+        assert group["count"] == len(group["cards"])
+        assert group["name"] and group["hint"]
+
+
+def test_category_default_open_is_small():
+    """默认展开的分类不能太多，否则等于没分类。"""
+    assert 1 <= len(CAT.CATEGORY_DEFAULT_OPEN) <= 3
+    for key in CAT.CATEGORY_DEFAULT_OPEN:
+        assert key in CAT.CATEGORY_ORDER
 
 
 # ================================================================ 技能树

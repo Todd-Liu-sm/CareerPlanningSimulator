@@ -167,7 +167,7 @@ GENERAL_CARDS = (
         tags=('sport', 'body')),    _mk('a_sleep_fix', '调整作息', 'common', 1, 8,
         '把凌晨两点的手机放下，按点睡按点起，两周之后整个人都不一样。',
         {'body': 3, 'mind': 2, 'gpa': 1},
-        tags=('rest', 'body')),    _mk('a_hobby_sport', '练一项运动', 'common', 1, 8,
+        tags=('rest', 'body')),    _mk('a_hobby_sport', '练体育运动', 'common', 1, 8,
         '把一项运动练到能拿出来说的程度，顺便认识一帮固定一起练的人。',
         {'body': 3, 'network': 1},
         tags=('hobby', 'sport'), hobby=('sport', 15)),    _mk('a_hobby_art', '搞点创作', 'common', 1, 8,

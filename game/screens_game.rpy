@@ -98,8 +98,17 @@ screen game_screen():
 
             hbox:
                 xfill True
+                spacing 8
                 text "这一学期，时间花在哪里？" style "t_head"
-                text "[slot_cost()] / [engine.ap]" style "t_small" xalign 1.0 yalign 0.5
+                text "[slot_cost()] / [engine.ap]" style "t_small" yalign 0.5
+                textbutton "全展开":
+                    style "ghost_button_small"
+                    action Function(expand_all_categories)
+                    yalign 0.5
+                textbutton "全折叠":
+                    style "ghost_button_small"
+                    action Function(collapse_all_categories)
+                    yalign 0.5
 
             side "c r":
                 xysize (676, 528)
@@ -111,9 +120,12 @@ screen game_screen():
                     xsize 662
 
                     vbox:
-                        spacing 8
-                        for row in visible_cards():
-                            use action_card(row)
+                        spacing 6
+                        # 按分类折叠渲染。167 张卡平铺成一个列表是看不过来的，
+                        # 而且引擎为了不刷屏只放前 14 张 —— 结果是"想做的事
+                        # 根本不在列表里"。分类 + 折叠让每张卡都够得着。
+                        for group in card_groups():
+                            use card_category(group)
 
                 vbar:
                     value YScrollValue("cards")
@@ -309,6 +321,21 @@ screen action_card(row):
                 if row['note']:
                     text "[row['note']]" style "t_tiny" color c_text_faint
 
+                # 爱好卡：这条长线现在几级、还差几次升级。
+                # 爱好是永久可选的一条线，等级必须一眼看得见，否则玩家不知道
+                # 反复投同一张到底有没有用。
+                if row['hobby']:
+                    $ _hb = row['hobby']
+                    hbox:
+                        spacing 8
+                        yalign 0.5
+                        text "Lv[ _hb['level'] ] / [ _hb['max_level'] ]" style "t_tiny" color c_gold
+                        add progress_bar(150, 8, _hb['ratio'], c_gold) yalign 0.5
+                        if _hb['maxed']:
+                            text "已满级" style "t_tiny" color c_accent
+                        else:
+                            text "再投 [ _hb['need'] ] 次升到 Lv[ _hb['level'] + 1 ]" style "t_tiny" color c_text_faint
+
             vbox:
                 spacing 2
                 xsize 116
@@ -322,6 +349,45 @@ screen action_card(row):
                         else:
                             text "[value]" style "t_tiny" color color xsize 34 text_align 1.0
                 text "[row['cost']] 行动点" style "t_tiny" color c_text_faint xalign 1.0
+
+
+# ================================================================ 分类折叠
+
+
+screen card_category(group):
+
+    python:
+        _open = category_expanded(group['key'])
+        _picked = sum(1 for row in group['rows'] if row['used'] > 0)
+
+    vbox:
+        spacing 4
+
+        # 分类头：点一下展开 / 折叠
+        button:
+            xfill True
+            padding (10, 6)
+            background Solid(c_panel_lo)
+            hover_background Solid(c_hover_bg)
+            action Function(toggle_category, group['key'])
+
+            hbox:
+                spacing 8
+                xfill True
+                yalign 0.5
+                # ▼ / ▶ 在自带的思源黑体里都有字形（查过 cmap），不会出豆腐块
+                text ("▼" if _open else "▶") style "t_tiny" color c_accent yalign 0.5
+                text "[group['name']]" style "t_small" color c_text yalign 0.5
+                text "[group['count']] 项" style "t_tiny" color c_text_faint yalign 0.5
+                text "[group['hint']]" style "t_tiny" color c_text_faint yalign 0.5
+                if _picked:
+                    text "已选 [_picked]" style "t_tiny" color c_accent xalign 1.0 yalign 0.5
+
+        if _open:
+            vbox:
+                spacing 4
+                for row in group['rows']:
+                    use action_card(row)
 
 
 # ================================================================ 结算浮层

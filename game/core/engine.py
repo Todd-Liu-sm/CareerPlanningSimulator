@@ -199,11 +199,16 @@ class GameEngine(object):
                 earliest = CFG.CONTEST_TIER_EARLIEST.get(card.contest_tier, 1)
                 if strict and semester < earliest:
                     continue
-                tier = CFG.CONTEST_TIER_ORDER.get(card.contest_tier, 0)
-                # 不能跳级：打国赛之前得先打过省赛
-                if tier >= 2:
-                    prev = CFG.CONTEST_TIERS[tier - 1]
-                    if player.contest_best.get(contest.id) != prev:
+                # 不能跳级：**必须真的赢下上一阶**，只是"打过"不算。
+                #
+                # contest_best 只在拿奖时才写入，所以这里比的就是"赢过哪一阶"。
+                # 于是未通过校赛 → 省赛不出现（玩家反馈的第 5 条）。
+                # 注意是"严格大于"：已经拿到省赛奖的人，校赛卡不再重复出现。
+                index = CFG.CONTEST_TIER_ORDER.get(card.contest_tier, 0)
+                if index > 0:
+                    prev = CFG.CONTEST_TIERS[index - 1]
+                    won = CFG.CONTEST_TIER_ORDER.get(player.contest_best.get(contest.id, ""), -1)
+                    if won < CFG.CONTEST_TIER_ORDER[prev]:
                         continue
                 out.append((card, False))
                 continue
@@ -238,18 +243,37 @@ class GameEngine(object):
 
         entries.sort(key=sort_key)
 
-        head = entries[:VISIBLE_CARDS]
-        if len(entries) > VISIBLE_CARDS:
-            # 保底卡必须永远可选，否则玩家可能被迫无路可走 —— 但只补少量
-            chosen = {id(card) for card, _ in head}
-            extra = 0
-            for card, is_safe in entries[VISIBLE_CARDS:]:
-                if extra >= _FALLBACK_MAX_EXTRA:
-                    break
-                if is_safe and id(card) not in chosen:
-                    head.append((card, is_safe))
-                    chosen.add(id(card))
-                    extra += 1
+        # 保底卡永远在列表里（见下面），所以先按品质+新鲜度取前 N 张，
+        # 再无条件补上爱好卡和保底卡。
+        head = list(entries[:VISIBLE_CARDS])
+        chosen = {id(card) for card, _ in head}
+        overflow = entries[VISIBLE_CARDS:]
+
+        # 爱好卡和竞赛卡必须永远在列表里。
+        #
+        # 曾经这里只按品质排序取前 14 张，而爱好卡全是 common —— 池子深了之后
+        # 它们**一张都进不了列表**，玩家"选了爱好也不涨经验"（其实根本没得选）。
+        # 竞赛卡同理：校赛也是 common，而且是唯一能打开整条竞赛线的入口。
+        # 这两类都是"长期线"而不是随机露面的机会卡，所以给它们留固定位置。
+        #
+        # 代价是列表变长（约 29 张），但界面现在按分类折叠，
+        # 长列表不再等于一屏糊满。
+        for card, _ in entries:
+            if id(card) in chosen:
+                continue
+            if getattr(card, "hobby", None) or getattr(card, "contest_id", ""):
+                head.append((card, False))
+                chosen.add(id(card))
+
+        # 保底卡：玩家可能被迫无路可走，所以也一定补上，但只补少量
+        extra = 0
+        for card, is_safe in overflow:
+            if extra >= _FALLBACK_MAX_EXTRA:
+                break
+            if is_safe and id(card) not in chosen:
+                head.append((card, is_safe))
+                chosen.add(id(card))
+                extra += 1
         return [card for card, _ in head]
 
     def card_cost(self, card_id: str) -> int:
