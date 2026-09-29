@@ -290,6 +290,53 @@ def narrative_for(key: str) -> str:
     return _NARRATIVE.get(key, _NARRATIVE["slow"])
 
 
+# ================================================================ 参考状态的一句话
+
+# 四个参考状态（幸福感 / 自信 / 社交满意度 / 生活状态）的平均值 → 一句总结。
+#
+# 为什么要有这一句：只摆四条进度条，玩家看到的是四个数字；结局页该说的其实是
+# "这四年你过得怎么样"。区间参照 MOOD_START=50 这个中位来切。
+_MOOD_VERDICTS: tuple[tuple[int, str], ...] = (
+    (72, "这四年你把自己照顾得很好，比大多数人都好。"),
+    (58, "你一直在忙，但没有把自己弄丢。"),
+    (45, "谈不上好也谈不上坏 —— 就是很普通地过完了四年。"),
+    (32, "这四年你过得有点紧，很多该停的时候没停。"),
+    (0,  "你把四年全押在目标上了，代价是过得不怎么样。"),
+)
+
+# 某一项特别低的时候追加一句。**顺序就是优先级**，只取第一条。
+_MOOD_WARNINGS: tuple[tuple[str, int, str], ...] = (
+    ("health", 30, "身体这笔账，毕业之后是要还的。"),
+    ("happiness", 30, "你好像很久没有真正开心过了。"),
+    ("social", 30, "这四年你基本是一个人扛过来的。"),
+    ("confidence", 30, "你始终不太相信自己。"),
+)
+
+
+def mood_average(moods: dict[str, int]) -> float:
+    """四个参考状态的平均值。缺项按初始值算，所以永远不会抛异常。"""
+    return sum(int(moods.get(key, C.MOOD_START)) for key in C.MOODS) / float(len(C.MOODS))
+
+
+def mood_verdict(moods: dict[str, int]) -> str:
+    """给这一局的参考状态配一句话。
+
+    纯粹是给玩家看的，**不参与任何判定** —— 四个值再怎么低也不会改变结局，
+    这一句只负责把"四个数字"翻译成"这四年你过得怎么样"。
+    """
+    average = mood_average(moods)
+    line = _MOOD_VERDICTS[-1][1]
+    for threshold, text in _MOOD_VERDICTS:
+        if average >= threshold:
+            line = text
+            break
+    for key, floor, warning in _MOOD_WARNINGS:
+        if int(moods.get(key, C.MOOD_START)) < floor:
+            line = line + warning
+            break
+    return line
+
+
 # ================================================================ 主入口
 
 def evaluate(state: GameState) -> EndingResult:
@@ -315,6 +362,7 @@ def evaluate(state: GameState) -> EndingResult:
         tags=ending_tags(state),
         narrative=narrative_for(key),
         radar=radar(player),
+        moods=dict(getattr(player, "moods", None) or {}),
         track_align={track: int(player.trait(track)) for track in C.TRACKS},
         contest_line=contest_line(player),
         highlights=highlights(state),

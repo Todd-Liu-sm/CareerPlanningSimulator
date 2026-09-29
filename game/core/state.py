@@ -190,6 +190,11 @@ class EndingResult:
     tags: list[str] = field(default_factory=list)
     narrative: str = ""
     radar: dict[str, int] = field(default_factory=dict)
+    # 参考状态（幸福感 / 自信 / 社交满意度 / 生活状态）。
+    # **与结局无关**，但结局页要显示它 —— 玩家反馈："最后总结页面没有人物状态，
+    # 就是'自信值'那些。" 放在 EndingResult 上而不是让界面自己去读 player：
+    # 离线工具（simulate / debug_run）也要能拿到终局的这几个值。
+    moods: dict[str, int] = field(default_factory=dict)
     track_align: dict[str, int] = field(default_factory=dict)
     contest_line: list[str] = field(default_factory=list)
     highlights: list[str] = field(default_factory=list)

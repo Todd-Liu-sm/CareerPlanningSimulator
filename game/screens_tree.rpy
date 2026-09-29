@@ -403,6 +403,10 @@ screen overlay_attrs():
                 mousewheel True
                 draggable True
                 xsize 604
+                # 自检用：0.0 在顶部，1.0 直接创建在底部。参考状态那一段在十项
+                # 结局属性下面，不滚下去拍不到 —— 见 screens_extras 里的同款说明，
+                # 事后用 renpy.display.core.get_viewport() 去拨是拨不动的。
+                yinitial attrs_scroll
 
                 vbox:
                     spacing 10

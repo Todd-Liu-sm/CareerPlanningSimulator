@@ -327,20 +327,22 @@ label selfcheck:
 
     # 属性页要滚到底再拍一张：参考状态那一段在十项结局属性下面，
     # 不滚下去就拍不到（只拍顶部会以为它没渲染出来）。
+    #
+    # **用 yinitial + hide/show，不要事后去拨 adjustment。** 以前这里调的是
+    # `renpy.display.core.get_viewport("attrs")`，实测拿不到那个 viewport，
+    # 异常被 try/except 吞掉 —— 于是 12b 和 12 拍出来是同一张图（字节数几乎一样），
+    # "参考状态"那一屏其实从来没被验证过。yinitial 是屏幕创建时读的，
+    # 所以必须 hide 一下再 show。
     python:
         engine.player.moods["happiness"] = 72
         engine.player.moods["confidence"] = 61
         engine.player.moods["social"] = 38
         engine.player.moods["health"] = 55
-        # 直接把视图偏移拨到底部。用 try/except 是因为这依赖 Ren'Py 内部
-        # 的 viewport 注册表，拿不到就算了 —— 自检不该因为一张截图而失败。
-        try:
-            _vp = renpy.display.core.get_viewport("attrs")
-            _vp.yadjustment.change(_vp.yadjustment.range)
-        except Exception:
-            pass
-    $ renpy.pause(0.2)
+    $ attrs_scroll = 1.0
+    hide screen game_screen
+    show screen game_screen
     $ CHK.shot_logged("12b_attrs_moods")
+    $ attrs_scroll = 0.0
 
     # ---------------- 存档界面（玩家实际会看到的那个）
     # 这一屏必须验证：没有它玩家根本找不到存档入口。
@@ -405,13 +407,28 @@ label selfcheck_finish:
         _full = selfcheck_full_run()
         for _key in ("跑完", "跑到第几学期", "历史条数", "标签正确", "最后一条",
                      "最后一条投了几张", "卡片与行动点对不上的学期", "复盘对不上的行",
-                     "结局", "抉择挂在第几学期"):
+                     "结局", "参考状态", "参考状态总结句", "参考状态动过几项",
+                     "抉择挂在第几学期"):
             CHK.check_log("selfcheck_report.txt", "整局校验 ・ %s = %s" % (_key, _full[_key]))
 
     # game_screen 在这个 label 里从没被 show 过，所以不需要 hide。
+    $ ending_scroll = 0.0
     show screen ending_screen
     $ CHK.shot_logged("14_ending")
     hide screen ending_screen
+
+    # 再拍一张滚到参考状态那一段的：幸福感 / 自信 / 社交满意度 / 生活状态在
+    # 十项结局属性下面。玩家反馈"最后总结页面没有人物状态"就是因为
+    # 这一屏的下半页从来没人看过。
+    #
+    # 0.75 是量出来的：0.55 停在属性条的尾巴上，0.95 已经翻过这一块到技能树了。
+    # 这几个区块的高度会随结局不同（够得着的路几条、竞赛战绩几行）而变，
+    # 所以它只是"大概能拍到"，不要写成"必须看到某几个字"的断言。
+    $ ending_scroll = 0.75
+    show screen ending_screen
+    $ CHK.shot_logged("14b_ending_moods")
+    hide screen ending_screen
+    $ ending_scroll = 0.0
 
     $ CHK.check_log("selfcheck_report.txt", "selfcheck 结束")
 

@@ -300,6 +300,12 @@ screen ending_screen():
             mousewheel True
             draggable True
             xsize 1264
+            # 自检用：把这一屏直接创建在某个滚动位置（0.0 顶部 / 1.0 底部）。
+            # **不能用 renpy.display.core.get_viewport() 事后去拨** —— 实测拿不到
+            # 那个 viewport，异常被 try/except 吞掉，于是"滚到底再拍一张"拍出来的
+            # 是同一张图（14b 和 14 字节数一模一样），下半页等于从来没被看过。
+            # yinitial 是屏幕创建时读的，所以自检里改完这个值要 hide + show 一次。
+            yinitial ending_scroll
 
             vbox:
                 spacing 0
@@ -366,6 +372,8 @@ screen ending_screen():
                     vbox:
                         spacing 6
                         text "四年之后你的样子" style "t_head"
+                        text "这十项决定你能走哪条路 —— 上面的结局就是从它们算出来的。" style "t_tiny" color c_text_faint
+                        null height 2
                         for _name, _value, _ratio in _bundle["radar"]:
                             hbox:
                                 spacing 10
@@ -373,6 +381,38 @@ screen ending_screen():
                                 text "[_value]" style "t_small" xsize 40 text_align 1.0
                                 add progress_bar(820, 12, _ratio, c_accent) yalign 0.5
                                 text "[pct_text(_ratio)]" style "t_tiny" color c_text_faint yalign 0.5
+
+                # ---------------- 参考状态（与结局无关）
+                #
+                # 玩家反馈："最后总结页面没有人物状态，就是'自信值'那些。"
+                # 这一段**紧跟在结局属性后面**，因为"两类属性分开展示"这个要求在
+                # 结局页同样成立：上面十项决定结局，这四项只说明你这四年过得怎么样。
+                # 用金色 + 明确写出"与结局无关"来区分，和右侧栏、属性页保持一致。
+                frame:
+                    xfill True
+                    xsize 1240
+                    background Solid(c_panel)
+                    padding (30, 20)
+                    vbox:
+                        spacing 6
+                        hbox:
+                            xfill True
+                            text "参考状态" style "t_head" color c_gold
+                            text "与结局无关 ・ 初始都是 [C.MOOD_START]" style "t_tiny" color c_text_faint xalign 1.0 yalign 0.5
+                        text "[ _bundle['mood_verdict'] ]" style "t_small" color c_gold
+                        null height 2
+                        for _mood in _bundle["moods"]:
+                            hbox:
+                                spacing 10
+                                text "[_mood['name']]" style "t_small" xsize 110
+                                text "[_mood['value']]" style "t_small" xsize 40 text_align 1.0
+                                add progress_bar(760, 12, _mood['ratio'], c_gold) yalign 0.5
+                                if _mood['delta'] > 0:
+                                    text "+[_mood['delta']]" style "t_tiny" color c_up xsize 48 yalign 0.5
+                                elif _mood['delta'] < 0:
+                                    text "[_mood['delta']]" style "t_tiny" color c_down xsize 48 yalign 0.5
+                                else:
+                                    text "持平" style "t_tiny" color c_text_faint xsize 48 yalign 0.5
 
                 # ---------------- 赛道进度
                 frame:

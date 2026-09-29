@@ -1,7 +1,7 @@
 # 工程配置。这里的每一项都影响打包产物与运行时行为。
 
 define config.name = _("本科职业发展模拟器")
-define config.version = "1.3.2"
+define config.version = "1.3.3"
 
 # 存档写在自己名下，不要污染 Ren'Py 默认目录
 define config.save_directory = "BenKeZhiYeFaZhan-1.0"

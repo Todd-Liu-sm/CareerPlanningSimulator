@@ -468,7 +468,17 @@ def ending_tags(state) -> list[str]: ...
 def radar(player) -> dict[str, int]: ...
 def contest_line(player) -> list[str]: ...
 def highlights(state) -> list[str]: ...
+def mood_average(moods) -> float: ...        # 四项参考状态的平均值
+def mood_verdict(moods) -> str: ...          # 结局页那句"这四年你过得怎么样"
 ```
+
+`EndingResult` 除了 `radar`（10 项结局属性）还要带上 **`moods`**（4 项参考状态，
+`PlayerState.moods` 的终局快照）。玩家反馈："最后总结页面没有人物状态，
+就是'自信值'那些。" 放进结果对象而不是让界面去读 `player`，是为了让
+`simulate.py` / `debug_run.py` 这些离线工具也能拿到终局的值。
+
+`mood_verdict` 按四个值的平均分五档，某一项低于 30 时再追加一句（生活状态优先）。
+**它不参与任何判定**，缺项按 `MOOD_START` 补，所以空字典和越界值都不会抛异常。
 
 用 `config.ENDING_GATES` / `ENDING_ALTS` / `ENDING_FLAGS` / `ENDING_ANY_FLAGS` / `ENDING_PRIORITY`。
 `evaluate` 必须返回**所有**命中的候选（`candidates`），主结局取排序后的第一个；

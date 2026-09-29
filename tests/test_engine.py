@@ -633,6 +633,102 @@ def test_hook_does_not_cost_action_points():
     assert eng.ap == before, "关键抉择不该消耗行动点"
 
 
+# ---------------------------------------------------------------- 参考状态
+
+def test_ending_carries_the_reference_stats():
+    """结局结果必须带上参考状态。
+
+    玩家反馈："最后总结页面没有人物状态，就是'自信值'那些。"
+    这一条盯的是数据源：结局页渲染的四个值来自 EndingResult.moods，
+    而不是界面自己去读 player —— 离线工具也要能拿到终局的这几个值。
+    """
+    from game.core import config as C
+
+    eng = play_full(new_engine(seed=4242))
+    ending = eng.resolve_ending()
+
+    missing = [key for key in C.MOODS if key not in ending.moods]
+    assert not missing, "结局里缺这些参考状态：%s" % missing
+    for key in C.MOODS:
+        assert C.MOOD_MIN <= ending.moods[key] <= C.MOOD_MAX, (
+            "%s = %d 超出 %d-%d" % (key, ending.moods[key], C.MOOD_MIN, C.MOOD_MAX)
+        )
+    # 和引擎当前状态是同一份快照
+    assert ending.moods == eng.player.moods
+
+
+def test_reference_stats_actually_move_over_four_years():
+    """四项参考状态在一局里必须真的会动。
+
+    全都停在初始值 = 玩家看到的永远是一模一样的四条 50，等于没做这个功能。
+    """
+    from game.core import config as C
+
+    moved = 0
+    for seed in (4242, 7777, 31337, 20260101):
+        eng = play_full(new_engine(seed=seed))
+        moods = eng.resolve_ending().moods
+        for key in C.MOODS:
+            if moods.get(key, C.MOOD_START) != C.MOOD_START:
+                moved += 1
+    assert moved >= len(C.MOODS), (
+        "四局下来参考状态只动过 %d 次，说明它们根本没被结算" % moved
+    )
+
+
+def test_mood_verdict_never_raises_and_covers_every_band():
+    """结局页那句话必须算得出来，而且要好坏有别。
+
+    它是给玩家看的，**不参与任何判定** —— 越界值、缺项、空字典都不能炸。
+    """
+    from game.core import config as C
+    from game.core import endings as END
+
+    cases = [
+        {},
+        {key: C.MOOD_MIN for key in C.MOODS},
+        {key: C.MOOD_MAX for key in C.MOODS},
+        {key: C.MOOD_START for key in C.MOODS},
+        {"happiness": -50, "confidence": 999, "social": 0},   # 越界也不能炸
+        {"happiness": "50"},                                  # 字符串也不行
+    ]
+    for moods in cases:
+        line = END.mood_verdict(moods)
+        assert isinstance(line, str) and line.strip(), moods
+
+    bands = {
+        END.mood_verdict({key: value for key in C.MOODS})
+        for value in (5, 38, 50, 65, 95)
+    }
+    assert len(bands) >= 4, "好坏分不出来，五档只产出 %d 句话：%s" % (len(bands), bands)
+
+
+def test_low_reference_stats_get_an_extra_line():
+    """某一项特别低时要追加一句 —— 否则"你过得不好"这个信息就丢了。
+
+    构造上要小心：只把一项压到 25、其余保持 95，平均值 77.5 仍落在最高一档，
+    所以**主句不变、只在后面追一句**。要是把其余几项也拉低，平均值会跨档，
+    主句本来就该换 —— 那是另一回事，别混在一条测试里。
+    """
+    from game.core import config as C
+    from game.core import endings as END
+
+    healthy = {key: 95 for key in C.MOODS}
+    base = END.mood_verdict(healthy)
+    assert base == END.mood_verdict({key: 95 for key in C.MOODS})  # 同一输入同一结果
+
+    for key in C.MOODS:
+        low = dict(healthy, **{key: 25})
+        line = END.mood_verdict(low)
+        assert line != base, "%s 掉到 25，结局页那句话居然没变" % key
+        assert line.startswith(base), (
+            "应该是在原句后面追加，而不是换一句：%r" % line
+        )
+
+    # 四项都低的时候，主句本身也要变 —— 不能永远只追加
+    assert END.mood_verdict({key: 10 for key in C.MOODS}) != base
+
+
 def test_every_track_ending_flag_comes_from_its_own_track():
     """每条赛道的结局 flag 都得由**它自己那条链**上的节点授予。
 

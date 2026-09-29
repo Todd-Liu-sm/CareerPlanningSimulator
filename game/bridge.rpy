@@ -42,7 +42,6 @@ default hook_result = None
 default unlock_notice = []
 
 # 自检专用：把模态浮层降级成非模态。
-#
 # **为什么需要这个**：`modal True` 的屏幕显示着的时候，`renpy.pause()` 会一直
 # 等下去（等那个没人点的 Return），于是自检卡死在截图那一步 —— 无报错、无截图、
 # 进程不退，测试工具只看"没有 FAILED 行"还会报"全部通过"。
@@ -52,6 +51,17 @@ default unlock_notice = []
 # 真实游戏里这个值永远是 False（模态是必要的：结算浮层必须挡住下面的卡）。
 # 只有 label selfcheck 会把它设成 True。
 default relax_modal = False
+
+# 自检专用：让长页面**创建时**就落在某个滚动位置（0.0 顶部 / 1.0 底部）。
+#
+# 为什么要用 yinitial 而不是事后拨：`renpy.display.core.get_viewport()` 拿不到
+# 这些 viewport，异常被 try/except 吞掉，于是"滚到底再拍一张"拍到的是同一张图
+# （14b 与 14 的字节数完全一样）。结果是属性页的参考状态和结局页的下半页
+# 都没有真正被看过一眼。
+#
+# 真实游戏里这两个值永远是 0.0（从顶部开始），只有 label selfcheck 会改。
+default attrs_scroll = 0.0
+default ending_scroll = 0.0
 
 # 界面导航
 default active_overlay = ""
@@ -353,16 +363,22 @@ init python:
             })
         return rows
 
-    def mood_rows():
+    def mood_rows(source=None):
         """参考状态：**与结局无关**，只给玩家看"这四年过得怎么样"。
 
         玩家反馈："加关于人物的一些属性，比如幸福感、自信值等等这些属性与结局无关，
         仅供玩家做个参考。然后两类属性你分开展示。"
+
+        ``source`` 是显式传进来的一组值（结局页会用 EndingResult 上那份快照，
+        保证"结局页显示的就是判定那一刻的值"）；不传就读引擎当前的玩家状态。
         """
         eng = store.engine
-        if eng is None:
+        if source is not None:
+            moods = source
+        elif eng is None:
             return []
-        moods = getattr(eng.player, "moods", None) or {}
+        else:
+            moods = getattr(eng.player, "moods", None) or {}
         rows = []
         for key in C.MOODS:
             value = int(moods.get(key, C.MOOD_START))
@@ -626,6 +642,16 @@ init python:
             "ending": ending,
             "radar": [(C.ATTR_SHORT[key], ending.radar.get(key, 0), attr_ratio(ending.radar.get(key, 0)))
                       for key in C.ATTRS],
+            # 参考状态。**必须走 mood_rows()**，不要在这里重算一遍 ——
+            # 游戏内右栏、属性页、结局页三处显示的是同一个东西，
+            # 各算各的迟早会出现"同一局两个地方数值不一样"。
+            #
+            # moods 优先取 EndingResult 上的（老存档里那个对象可能没有这个字段，
+            # 所以用 getattr 兜一下），取不到就回落到引擎当前的玩家状态。
+            "moods": mood_rows(getattr(ending, "moods", None) or None),
+            "mood_verdict": CM.endings.mood_verdict(
+                getattr(ending, "moods", None) or eng.player.moods or {}
+            ),
             "tracks": track_summary_rows(),
             "tags": ending.tags,
             "contests": ending.contest_line,
@@ -685,6 +711,14 @@ init python:
             line for line in probe.highlights() if line.partition("：")[0] not in labels
         ]
         report["结局"] = probe.resolve_ending().name
+        # 参考状态必须跟着结局一起出来（玩家反馈："最后总结页面没有人物状态"），
+        # 而且四项都要是真实结算过的值，不是四平八稳的初始值。
+        _moods = probe.resolve_ending().moods
+        report["参考状态"] = {C.MOOD_NAMES[k]: _moods.get(k, C.MOOD_START) for k in C.MOODS}
+        report["参考状态总结句"] = CM.endings.mood_verdict(_moods)
+        report["参考状态动过几项"] = sum(
+            1 for k in C.MOODS if _moods.get(k, C.MOOD_START) != C.MOOD_START
+        )
         # 抉择页只剩定方向 / 暑假安排 / 大四上主攻，最后半学期必须是空出来玩的
         report["抉择挂在第几学期"] = sorted(h.semester for h in CM.starts.HOOKS.values())
         return report
